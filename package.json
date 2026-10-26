@@ -1,0 +1,12 @@
+{
+  "name": "easing-lab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Compare CSS easing curves and springs side by side on the same interface animation.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js && node serve.js",
+    "start": "node serve.js"
+  }
+}

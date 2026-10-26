@@ -1,0 +1,160 @@
+<title>Easing Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
+<link rel="stylesheet" href="styles.css" />
+<a class="skip" href="#grid">Skip to the comparison</a>
+
+<div class="page">
+  <header class="bar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 28 20" aria-hidden="true">
+        <path d="M2 18 C 10 18, 12 2, 26 2" fill="none" />
+        <circle cx="26" cy="2" r="2.4" />
+      </svg>
+      <strong>Easing Lab</strong>
+    </div>
+    <nav class="views" role="tablist" aria-label="Views">
+      <button type="button" data-view="compare" role="tab" aria-selected="true" class="is-active">Compare</button>
+      <button type="button" data-view="tune" role="tab" aria-selected="false">Tune</button>
+    </nav>
+  </header>
+
+  <p id="reduced-note" class="notice" hidden>
+    Your system is set to reduce motion, so nothing plays on its own. Press <strong>Replay</strong> or a card to run a curve once.
+  </p>
+
+  <section id="view-compare" class="view">
+    <div class="controls">
+      <div class="chips" id="demo-chips" role="group" aria-label="Interaction"></div>
+      <div class="control" title="Applies to timing curves. Springs carry their own duration.">
+        <label class="control-label" for="duration">Duration <output id="duration-out" for="duration">300ms</output></label>
+        <input type="range" id="duration" min="80" max="1200" step="10" value="300" />
+      </div>
+      <div class="chips" id="speed-chips" role="group" aria-label="Playback speed"></div>
+      <div class="control-actions">
+        <label class="checkbox" for="loop"><input type="checkbox" id="loop" /> Loop</label>
+        <button type="button" id="replay" class="btn btn-primary">Replay</button>
+      </div>
+    </div>
+
+    <div class="grid" id="grid"></div>
+
+    <div class="add-row">
+      <button type="button" id="toggle-picker" class="btn" aria-expanded="false" aria-controls="picker">Add easing</button>
+    </div>
+
+    <div class="picker" id="picker" hidden>
+      <label class="search">
+        <span class="sr-only">Search easings</span>
+        <input type="search" id="picker-search" placeholder="Search by name or by what it is for" />
+      </label>
+      <div id="picker-list"></div>
+    </div>
+  </section>
+
+  <section id="view-tune" class="view" hidden>
+    <div class="tune">
+      <div class="tune-stage" id="tune-stage"></div>
+
+      <div class="tune-panel" id="tune-panel">
+        <div class="tune-head">
+          <label class="field">
+            <span class="sr-only">Easing</span>
+            <select id="tune-easing"></select>
+          </label>
+          <div class="tune-id">
+            <h2><span id="tune-name">Bouncy spring</span><em id="tune-edited" hidden>edited</em></h2>
+            <p class="params"><span id="tune-params"></span> <span class="muted">&middot;</span> <span class="muted" id="tune-settle"></span></p>
+          </div>
+        </div>
+
+        <div class="tune-body">
+          <div class="editor">
+            <svg id="editor-svg" viewBox="0 0 320 320" aria-label="Curve editor">
+              <defs>
+                <pattern id="dots" width="13" height="13" patternUnits="userSpaceOnUse">
+                  <circle class="editor-dot" cx="1.2" cy="1.2" r="0.9" />
+                </pattern>
+              </defs>
+              <rect class="editor-frame" x="22" y="22" width="276" height="276" rx="6" />
+              <line id="guide-one" class="editor-guide" x1="30" x2="290" y1="52" y2="52" />
+              <line id="guide-zero" class="editor-guide" x1="30" x2="290" y1="268" y2="268" />
+              <path id="editor-curve" class="editor-curve" fill="none" d="" />
+              <line id="leg-1" class="editor-leg" x1="30" y1="268" x2="100" y2="200" />
+              <line id="leg-2" class="editor-leg" x1="290" y1="52" x2="220" y2="120" />
+              <circle id="editor-head" class="editor-head" r="5" cx="30" cy="268" />
+              <circle id="handle-1" class="editor-handle" r="7" cx="100" cy="200" tabindex="0" role="slider"
+                aria-label="First control point, arrow keys to move" />
+              <circle id="handle-2" class="editor-handle" r="7" cx="220" cy="120" tabindex="0" role="slider"
+                aria-label="Second control point, arrow keys to move" />
+            </svg>
+          </div>
+
+          <div class="tune-side">
+            <div id="bezier-controls" class="sliders">
+              <div class="slider-row">
+                <label for="p-x1">x1</label>
+                <input type="range" id="p-x1" min="0" max="1" step="0.001" value="0.25" />
+                <output id="o-x1" for="p-x1">0.25</output>
+              </div>
+              <div class="slider-row">
+                <label for="p-y1">y1</label>
+                <input type="range" id="p-y1" min="-0.6" max="1.6" step="0.001" value="0.1" />
+                <output id="o-y1" for="p-y1">0.10</output>
+              </div>
+              <div class="slider-row">
+                <label for="p-x2">x2</label>
+                <input type="range" id="p-x2" min="0" max="1" step="0.001" value="0.25" />
+                <output id="o-x2" for="p-x2">0.25</output>
+              </div>
+              <div class="slider-row">
+                <label for="p-y2">y2</label>
+                <input type="range" id="p-y2" min="-0.6" max="1.6" step="0.001" value="1" />
+                <output id="o-y2" for="p-y2">1.00</output>
+              </div>
+              <div class="slider-row">
+                <label for="tune-ms">Duration</label>
+                <input type="range" id="tune-ms" min="80" max="1200" step="10" value="300" />
+                <output id="tune-ms-out" for="tune-ms">300ms</output>
+              </div>
+            </div>
+
+            <div id="spring-controls" class="sliders" hidden>
+              <div class="slider-row">
+                <label for="tune-duration">Duration</label>
+                <input type="range" id="tune-duration" min="0.1" max="2" step="0.01" value="0.5" />
+                <output id="tune-duration-out" for="tune-duration">0.50s</output>
+              </div>
+              <div class="slider-row">
+                <label for="tune-bounce">Bounce</label>
+                <input type="range" id="tune-bounce" min="-0.5" max="0.8" step="0.01" value="0.3" />
+                <output id="tune-bounce-out" for="tune-bounce">0.30</output>
+              </div>
+            </div>
+
+            <p class="tune-use"><span id="tune-blurb"></span> <span class="muted" id="use-note"></span></p>
+
+            <div class="tune-actions">
+              <button type="button" id="tune-replay" class="btn btn-primary">Replay</button>
+              <button type="button" id="tune-add" class="btn">Add to compare</button>
+              <button type="button" id="tune-reset" class="btn btn-quiet">Reset</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="code">
+          <div class="code-tabs" id="code-tabs" role="tablist" aria-label="Code format">
+            <button type="button" class="tab is-active" data-tab="CSS" role="tab" aria-selected="true">CSS</button>
+            <button type="button" class="tab" data-tab="Motion" role="tab" aria-selected="false">Motion</button>
+            <button type="button" class="tab" data-tab="SwiftUI" role="tab" aria-selected="false">SwiftUI</button>
+            <button type="button" class="tab" data-tab="Tailwind" role="tab" aria-selected="false">Tailwind</button>
+            <button type="button" id="copy-code" class="tab tab-copy">Copy</button>
+          </div>
+          <pre><code id="code-out"></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+<script type="module" src="js/app.js"></script>
