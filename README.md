@@ -27,6 +27,30 @@ npm run dev      # builds, then serves on http://localhost:4173
 There is no bundler and no dependencies. `npm run build` regenerates the two HTML entry
 points from `src/body.html`; everything else is plain ES modules the browser loads directly.
 
+## Deploying
+
+The repository root is the site root: `index.html`, `styles.css` and `js/` are served as they
+are. `vercel.json` pins the settings, so importing the repo on Vercel needs no changes in the
+import screen:
+
+| Setting | Value |
+| --- | --- |
+| Root Directory | `./` (leave it alone) |
+| Framework Preset | Other |
+| Build Command | `node build.js` |
+| Output Directory | `.` |
+| Install Command | none needed, there are no dependencies |
+
+`node build.js` only regenerates the two HTML entry points from `src/body.html`. They are
+committed, so the site also deploys correctly with the build step disabled.
+
+Vercel builds the repository's default branch as production. From the CLI:
+
+```sh
+npx vercel        # preview deployment
+npx vercel --prod # production
+```
+
 ## How the curves are computed
 
 Timing curves use the same cubic-bezier solver browsers use: Newton-Raphson with a bisection
