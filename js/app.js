@@ -3,13 +3,16 @@ import { createPlot, sample, extent, miniCurve } from './curve.js';
 import { DEMOS, demoById } from './demos.js';
 
 const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const STORE_KEY = 'easing-lab-state';
+const STORE_KEY = 'easing-lab-state-v2';
 const HOLD_MS = 700;
+const MAX_CARDS = 6;
+const GROUPS = ['All', ...new Set(LIBRARY.map((e) => e.group))];
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const defaults = () => ({
+  view: 'compare',
   demo: 'sheet',
   durationMs: 300,
   speed: 1,
@@ -17,32 +20,65 @@ const defaults = () => ({
   cards: [{ id: 'ease' }, { id: 'spring-smooth' }, { id: 'spring-bouncy' }],
   tune: { id: 'spring-bouncy' },
   codeTab: 'CSS',
+  pickerGroup: 'All',
 });
 
 function load() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (!raw) return defaults();
-    return { ...defaults(), ...JSON.parse(raw) };
+    return raw ? { ...defaults(), ...JSON.parse(raw) } : defaults();
   } catch {
     return defaults();
   }
 }
 
 function save() {
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ ...state, cards: state.cards, tune: state.tune }));
-  } catch { /* private browsing, nothing to do */ }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* storage unavailable */ }
 }
 
 const state = load();
-let cards = [];       // live card instances for the compare grid
-let tuneCard = null;  // the single large demo on the tuning bench
+let cards = [];       // live card instances in the compare grid
+let tuneCard = null;  // the single preview on the tuning bench
 let rafId = null;
 let holdId = null;
 let startTime = 0;
 
-/* ------------------------------------------------------------ phone mocks */
+/* ---------------------------------------------------------------- inputs */
+
+// The slider track is a gradient that fills up to the thumb; it needs the
+// value as a 0..1 fraction because CSS cannot read an input's value.
+function syncRange(input) {
+  const min = Number(input.min);
+  const max = Number(input.max);
+  input.style.setProperty('--f', ((Number(input.value) - min) / (max - min)).toFixed(4));
+}
+
+function setRange(input, value) {
+  input.value = value;
+  syncRange(input);
+}
+
+function renderFilters(container, items, active, onPick) {
+  container.innerHTML = '';
+  for (const { value, label } of items) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `filter${value === active ? ' is-active' : ''}`;
+    button.textContent = label;
+    button.setAttribute('aria-pressed', String(value === active));
+    button.addEventListener('click', () => {
+      $$('.filter', container).forEach((b) => {
+        const on = b === button;
+        b.classList.toggle('is-active', on);
+        b.setAttribute('aria-pressed', String(on));
+      });
+      onPick(value);
+    });
+    container.append(button);
+  }
+}
+
+/* ---------------------------------------------------------------- phones */
 
 function makePhone(size = '') {
   const phone = document.createElement('div');
@@ -51,88 +87,97 @@ function makePhone(size = '') {
   return phone;
 }
 
-/* ------------------------------------------------------------- comparison */
+function shortParams(r) {
+  if (r.type === 'spring') return `${round(r.duration, 2)}s · bounce ${round(r.bounce, 2)}`;
+  return `${r.bezier.map((n) => round(n, 2)).join(', ')} · ${Math.round(r.totalMs)}ms`;
+}
+
+/* --------------------------------------------------------------- compare */
 
 function resolveCard(config) {
   return resolve({ ...config, durationMs: config.durationMs ?? state.durationMs });
 }
 
+function toolButton(act, icon, label) {
+  return `<button type="button" class="tool-btn" data-act="${act}" aria-label="${label}" title="${label}">
+    <svg><use href="#${icon}" /></svg></button>`;
+}
+
 function buildGrid() {
   const grid = $('#grid');
   grid.innerHTML = '';
+
   cards = state.cards.map((config, index) => {
     const article = document.createElement('article');
     article.className = 'card';
-    article.tabIndex = 0;
-    article.setAttribute('role', 'button');
 
+    const box = document.createElement('div');
+    box.className = 'card-box';
     const phone = makePhone();
-    const plot = createPlot();
-    const label = document.createElement('div');
-    label.className = 'card-label';
-    const actions = document.createElement('div');
-    actions.className = 'card-actions';
-    actions.innerHTML = `
-      <button class="link-btn" data-act="copy">Copy CSS</button>
-      <button class="link-btn" data-act="tune">Tune</button>
-      <button class="link-btn" data-act="remove">Remove</button>`;
-
+    const plot = createPlot({ width: 260, height: 56, inset: 4 });
     const plotWrap = document.createElement('div');
     plotWrap.className = 'plot-wrap';
     plotWrap.append(plot.svg);
+    const tools = document.createElement('div');
+    tools.className = 'card-tools';
+    tools.innerHTML = toolButton('copy', 'i-copy', 'Copy CSS')
+      + toolButton('tune', 'i-tune', 'Open in Tune')
+      + (state.cards.length > 1 ? toolButton('remove', 'i-close', 'Remove') : '');
+    box.append(tools, phone, plotWrap);
 
-    article.append(phone, plotWrap, label, actions);
+    const label = document.createElement('div');
+    label.className = 'card-label';
+    label.innerHTML = '<h3></h3><p></p>';
+
+    article.append(box, label);
     grid.append(article);
 
-    const apply = demoById(state.demo).create($('.screen', phone));
-    const card = { config, index, article, plot, label, apply, resolved: resolveCard(config) };
+    const card = {
+      config, index, article, plot, label,
+      apply: demoById(state.demo).create($('.screen', phone)),
+      resolved: resolveCard(config),
+    };
 
     article.addEventListener('click', (event) => {
-      const act = event.target.closest('[data-act]')?.dataset.act;
-      if (act === 'remove') { removeCard(index); return; }
-      if (act === 'tune') { state.tune = { ...config }; setView('tune'); return; }
-      if (act === 'copy') { copyText(snippets(card.resolved).CSS, event.target); return; }
-      playAll();
-    });
-    article.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); playAll(); }
+      const tool = event.target.closest('[data-act]');
+      if (!tool) { playAll(); return; }
+      const act = tool.dataset.act;
+      if (act === 'remove') removeCard(index);
+      if (act === 'tune') { state.tune = { ...config }; setView('tune'); }
+      if (act === 'copy') copyText(snippets(card.resolved).CSS, () => flashDone(tool));
     });
 
     return card;
   });
+
+  $('#add-easing').disabled = cards.length >= MAX_CARDS;
   refreshCards();
 }
 
 function refreshCards() {
   cards.forEach((card) => { card.resolved = resolveCard(card.config); });
 
+  // One vertical scale for every card, so a spring's overshoot reads as larger
+  // than a timing curve's flat finish when they sit side by side.
   const curves = cards.map((card) => sample(card.resolved.fn));
   const range = extent(curves);
-  const slowest = Math.max(...cards.map((card) => card.resolved.totalMs), 1);
 
   cards.forEach((card, i) => {
     const r = card.resolved;
     card.plot.setCurve(curves[i], range);
-    card.label.innerHTML = `
-      <h3>${r.name}</h3>
-      <p class="params">${r.params}</p>
-      <div class="timing">
-        <span class="time">${r.settleLabel}</span>
-        <span class="timebar"><i style="width:${(r.totalMs / slowest) * 100}%"></i></span>
-      </div>`;
-    card.article.setAttribute('aria-label', `${r.name}, ${r.params}. Press to replay.`);
+    $('h3', card.label).textContent = r.name;
+    $('p', card.label).textContent = shortParams(r);
     card.apply(REDUCED ? 1 : 0);
     card.plot.setProgress(REDUCED ? 1 : 0);
   });
-
-  $('#toggle-picker').disabled = cards.length >= 6;
   save();
 }
 
 function addCard(config) {
-  if (state.cards.length >= 6) return;
+  if (state.cards.length >= MAX_CARDS) return;
   state.cards = [...state.cards, config];
   buildGrid();
+  if (!REDUCED) cards.at(-1).article.classList.add('is-new');
   playAll();
 }
 
@@ -142,7 +187,18 @@ function removeCard(index) {
   buildGrid();
 }
 
-/* --------------------------------------------------------------- playback */
+function flashDone(button) {
+  const use = $('use', button);
+  const previous = use.getAttribute('href');
+  use.setAttribute('href', '#i-check');
+  button.classList.add('is-done');
+  setTimeout(() => {
+    use.setAttribute('href', previous);
+    button.classList.remove('is-done');
+  }, 1200);
+}
+
+/* -------------------------------------------------------------- playback */
 
 function stopClock() {
   if (rafId) cancelAnimationFrame(rafId);
@@ -152,17 +208,21 @@ function stopClock() {
 }
 
 function activeCards() {
-  return $('#view-tune').hidden ? cards : (tuneCard ? [tuneCard] : []);
+  if (state.view === 'tune') return tuneCard ? [tuneCard] : [];
+  return cards;
 }
 
-function playAll() {
+function showEnd(list) {
+  list.forEach((card) => { card.apply(1); card.plot.setProgress(1); });
+}
+
+// Reduced motion stops anything starting by itself. An explicit Replay still
+// plays, because watching the curve is the whole reason the page exists.
+function playAll({ auto = false } = {}) {
   stopClock();
   const running = activeCards();
   if (!running.length) return;
-  if (REDUCED) {
-    running.forEach((card) => { card.apply(1); card.plot.setProgress(1); });
-    return;
-  }
+  if (REDUCED && auto) { showEnd(running); return; }
   startTime = performance.now();
   rafId = requestAnimationFrame(frame);
 }
@@ -173,16 +233,16 @@ function frame(now) {
   let done = true;
   for (const card of running) {
     const p = clamp(elapsed / card.resolved.totalMs, 0, 1);
-    card.apply(card.resolved.fn(p));
+    card.apply(card.resolved.fn(p), p, card.resolved);
     card.plot.setProgress(p);
     if (p < 1) done = false;
   }
   if (!done) { rafId = requestAnimationFrame(frame); return; }
   rafId = null;
-  if (state.loop) {
+  if (state.loop && !REDUCED) {
     holdId = setTimeout(() => {
       running.forEach((card) => { card.apply(0); card.plot.setProgress(0); });
-      holdId = setTimeout(playAll, 120);
+      holdId = setTimeout(() => playAll({ auto: true }), 140);
     }, HOLD_MS);
   }
 }
@@ -190,51 +250,60 @@ function frame(now) {
 /* ---------------------------------------------------------------- picker */
 
 function buildPicker() {
-  const picker = $('#picker');
-  const list = $('#picker-list', picker);
-  list.innerHTML = '';
-  const groups = [...new Set(LIBRARY.map((e) => e.group))];
-  for (const group of groups) {
-    const section = document.createElement('div');
-    section.className = 'picker-group';
-    section.innerHTML = `<h4>${group}</h4>`;
-    const items = document.createElement('div');
-    items.className = 'picker-items';
-    for (const entry of LIBRARY.filter((e) => e.group === group)) {
-      const button = document.createElement('button');
-      button.className = 'picker-item';
-      button.dataset.id = entry.id;
-      button.dataset.search = `${entry.name} ${entry.group} ${entry.use}`.toLowerCase();
-      const r = resolve({ id: entry.id, durationMs: 300 });
-      const text = document.createElement('span');
-      text.className = 'picker-text';
-      text.innerHTML = `<strong>${entry.name}</strong><em>${entry.blurb}</em>`;
-      button.append(miniCurve(r.fn), text);
-      button.addEventListener('click', () => {
+  renderFilters(
+    $('#picker-filters'),
+    GROUPS.map((g) => ({ value: g, label: g })),
+    state.pickerGroup,
+    (group) => { state.pickerGroup = group; renderPickerTiles(); save(); },
+  );
+  renderPickerTiles();
+}
+
+function renderPickerTiles() {
+  const grid = $('#picker-grid');
+  grid.innerHTML = '';
+  const entries = LIBRARY.filter((e) => state.pickerGroup === 'All' || e.group === state.pickerGroup);
+  for (const entry of entries) {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'tile';
+    tile.title = `${entry.blurb} ${entry.use}`;
+    const box = document.createElement('span');
+    box.className = 'tile-box';
+    box.append(miniCurve(resolve({ id: entry.id, durationMs: 300 }).fn));
+    const name = document.createElement('span');
+    name.className = 'tile-name';
+    name.textContent = entry.name;
+    tile.append(box, name);
+    tile.addEventListener('click', () => {
+      closePicker();
+      if (state.view === 'tune') {
+        state.tune = { id: entry.id };
+        refreshTune();
+        playAll();
+      } else {
         addCard({ id: entry.id });
-        picker.hidden = true;
-        $('#toggle-picker').setAttribute('aria-expanded', 'false');
-      });
-      items.append(button);
-    }
-    section.append(items);
-    list.append(section);
+      }
+    });
+    grid.append(tile);
   }
 }
 
-function filterPicker(query) {
-  const q = query.trim().toLowerCase();
-  $$('#picker .picker-item').forEach((item) => {
-    item.hidden = Boolean(q) && !item.dataset.search.includes(q);
-  });
-  $$('#picker .picker-group').forEach((group) => {
-    group.hidden = !$$('.picker-item:not([hidden])', group).length;
-  });
+function openPicker() {
+  $('#picker').hidden = false;
+  $('#add-easing').setAttribute('aria-expanded', 'true');
+  $('#picker .filter.is-active')?.focus();
+}
+
+function closePicker() {
+  if ($('#picker').hidden) return;
+  $('#picker').hidden = true;
+  $('#add-easing').setAttribute('aria-expanded', 'false');
 }
 
 /* ------------------------------------------------------------------ tune */
 
-const EDITOR = { w: 320, h: 320, pad: 30, yMin: -0.6, yMax: 1.6 };
+const EDITOR = { w: 320, h: 320, pad: 34, yMin: -0.6, yMax: 1.6 };
 let editorRange = [-0.08, 1.08];
 
 const ex = (t) => EDITOR.pad + t * (EDITOR.w - EDITOR.pad * 2);
@@ -249,32 +318,33 @@ const invY = (py) => {
   return clamp(v, EDITOR.yMin, EDITOR.yMax);
 };
 
+// The editor doubles as the playhead display, so the curve you edit is the one you watch run.
+let editorPoints = [];
+const editorPlot = {
+  setCurve(points) { editorPoints = points; },
+  setProgress(t) {
+    if (!editorPoints.length) return;
+    const p = clamp(t, 0, 1);
+    const [, v] = editorPoints[Math.round(p * (editorPoints.length - 1))];
+    const head = $('#editor-head');
+    head.setAttribute('cx', ex(p));
+    head.setAttribute('cy', ey(v));
+  },
+};
+
 function buildTune() {
   const stage = $('#tune-stage');
   stage.innerHTML = '';
   const phone = makePhone('is-large');
   stage.append(phone);
-
-  const select = $('#tune-easing');
-  select.innerHTML = '';
-  for (const group of [...new Set(LIBRARY.map((e) => e.group))]) {
-    const optgroup = document.createElement('optgroup');
-    optgroup.label = group;
-    for (const entry of LIBRARY.filter((e) => e.group === group)) {
-      const option = document.createElement('option');
-      option.value = entry.id;
-      option.textContent = entry.name;
-      optgroup.append(option);
-    }
-    select.append(optgroup);
-  }
+  stage.addEventListener('click', () => playAll());
 
   tuneCard = {
     config: state.tune,
     plot: editorPlot,
+    phone,
     apply: demoById(state.demo).create($('.screen', phone)),
     resolved: resolve(state.tune),
-    phone,
   };
   refreshTune();
 }
@@ -284,36 +354,27 @@ function refreshTune({ rebuildDemo = false } = {}) {
   if (rebuildDemo) tuneCard.apply = demoById(state.demo).create($('.screen', tuneCard.phone));
 
   const config = state.tune;
-  tuneCard.config = config;
   const base = byId(config.id);
   const r = resolve({ ...config, durationMs: config.durationMs ?? state.durationMs });
+  tuneCard.config = config;
   tuneCard.resolved = r;
-
-  $('#tune-easing').value = config.id;
-  const points = sample(r.fn);
-  editorPlot.setCurve(points);
 
   const isSpring = r.type === 'spring';
   $('#spring-controls').hidden = !isSpring;
   $('#bezier-controls').hidden = isSpring;
-  $('#editor-svg').classList.toggle('is-dim', isSpring);
-
-  if (!isSpring) {
-    const [x1, y1, x2, y2] = r.bezier;
-    setSlider('x1', x1, 2);
-    setSlider('y1', y1, 2);
-    setSlider('x2', x2, 2);
-    setSlider('y2', y2, 2);
-  }
 
   if (isSpring) {
-    $('#tune-duration').value = r.duration;
-    $('#tune-duration-out').textContent = `${r.duration.toFixed(2)}s`;
-    $('#tune-bounce').value = r.bounce;
+    setRange($('#tune-duration'), r.duration);
+    $('#tune-duration-out').textContent = r.duration.toFixed(2);
+    setRange($('#tune-bounce'), r.bounce);
     $('#tune-bounce-out').textContent = r.bounce.toFixed(2);
   } else {
-    $('#tune-ms').value = Math.round(r.totalMs);
-    $('#tune-ms-out').textContent = `${Math.round(r.totalMs)}ms`;
+    ['x1', 'y1', 'x2', 'y2'].forEach((key, i) => {
+      setRange($(`#p-${key}`), r.bezier[i]);
+      $(`#o-${key}`).textContent = r.bezier[i].toFixed(2);
+    });
+    setRange($('#tune-ms'), Math.round(r.totalMs));
+    $('#tune-ms-out').textContent = Math.round(r.totalMs);
   }
 
   const edited = (config.bezier && base?.bezier && config.bezier.join() !== base.bezier.join())
@@ -322,50 +383,32 @@ function refreshTune({ rebuildDemo = false } = {}) {
 
   $('#tune-name').textContent = base ? base.name : 'Custom';
   $('#tune-edited').hidden = !edited;
-  $('#tune-params').textContent = r.params;
-  $('#tune-settle').textContent = r.settleLabel;
+  $('#tune-params').textContent = isSpring
+    ? `${r.duration.toFixed(2)}s, bounce ${r.bounce.toFixed(2)}`
+    : `${Math.round(r.totalMs)}ms`;
+  $('#tune-settle').textContent = isSpring ? r.settleLabel : '';
+  $('#tune-settle').previousElementSibling.hidden = !isSpring;
   $('#tune-blurb').textContent = base ? base.blurb : '';
   $('#use-note').textContent = base ? base.use : '';
 
+  const points = sample(r.fn);
+  editorPlot.setCurve(points);
   drawEditor(r, points);
+  editorPlot.setProgress(REDUCED || !rafId ? 1 : 0);
+  if (!rafId) tuneCard.apply(1);
   renderCode(r);
   save();
 }
 
-// The editor doubles as the playhead display, so the curve you are editing is
-// the same one you watch run.
-let editorPoints = [];
-const editorPlot = {
-  setCurve(points) { editorPoints = points; },
-  setProgress(t) {
-    const head = document.getElementById('editor-head');
-    if (!head || !editorPoints.length) return;
-    const p = clamp(t, 0, 1);
-    const i = Math.round(p * (editorPoints.length - 1));
-    const [, v] = editorPoints[i];
-    head.setAttribute('cx', ex(p));
-    head.setAttribute('cy', ey(v));
-  },
-};
-
-function setSlider(key, value, places) {
-  const input = $(`#p-${key}`);
-  const output = $(`#o-${key}`);
-  if (!input) return;
-  input.value = value;
-  output.textContent = value.toFixed(places);
-}
-
 function drawEditor(r, points) {
   const svg = $('#editor-svg');
-  const curve = $('#editor-curve', svg);
 
-  // Fit the drawing to whatever the curve actually does, so overshoot is never clipped.
+  // Fit the drawing to whatever the curve does, so overshoot is never clipped.
   const values = points.map(([, v]) => v);
   if (r.type === 'bezier') values.push(r.bezier[1], r.bezier[3]);
   const lo = Math.min(0, ...values);
   const hi = Math.max(1, ...values);
-  const margin = (hi - lo) * 0.08;
+  const margin = (hi - lo) * 0.06;
   editorRange = [lo - margin, hi + margin];
 
   for (const [id, value] of [['#guide-one', 1], ['#guide-zero', 0]]) {
@@ -374,7 +417,8 @@ function drawEditor(r, points) {
     line.setAttribute('y2', ey(value).toFixed(2));
   }
 
-  curve.setAttribute('d', points.map(([t, v], i) => `${i ? 'L' : 'M'}${ex(t).toFixed(1)} ${ey(v).toFixed(1)}`).join(' '));
+  $('#editor-curve', svg).setAttribute('d',
+    points.map(([t, v], i) => `${i ? 'L' : 'M'}${ex(t).toFixed(1)} ${ey(v).toFixed(1)}`).join(' '));
 
   const v = r.type === 'bezier' ? r.bezier : null;
   $$('.editor-handle, .editor-leg', svg).forEach((node) => { node.style.display = v ? '' : 'none'; });
@@ -397,11 +441,11 @@ function setHandle(node, x, y) {
   node.setAttribute('cy', ey(y));
   node.dataset.x = x;
   node.dataset.y = y;
+  node.setAttribute('aria-valuetext', `${round(x, 2)}, ${round(y, 2)}`);
 }
 
 function currentBezier() {
-  const base = byId(state.tune.id);
-  return state.tune.bezier ?? base?.bezier ?? [0.25, 0.1, 0.25, 1];
+  return state.tune.bezier ?? byId(state.tune.id)?.bezier ?? [0.25, 0.1, 0.25, 1];
 }
 
 function setBezier(index, x, y) {
@@ -414,9 +458,8 @@ function setBezier(index, x, y) {
 
 function initEditorDragging() {
   const svg = $('#editor-svg');
-  for (const id of ['handle-1', 'handle-2']) {
+  for (const [id, index] of [['handle-1', 0], ['handle-2', 1]]) {
     const handle = $(`#${id}`, svg);
-    const index = id === 'handle-1' ? 0 : 1;
 
     const move = (event) => {
       const rect = svg.getBoundingClientRect();
@@ -426,71 +469,79 @@ function initEditorDragging() {
     };
 
     handle.addEventListener('pointerdown', (event) => {
-      if (state.tune.id && byId(state.tune.id)?.type === 'spring') return;
       event.preventDefault();
+      stopClock();
       handle.setPointerCapture(event.pointerId);
       handle.classList.add('is-dragging');
       const up = () => {
         handle.classList.remove('is-dragging');
         handle.removeEventListener('pointermove', move);
         handle.removeEventListener('pointerup', up);
-        playTune();
+        handle.removeEventListener('pointercancel', up);
+        playAll();
       };
       handle.addEventListener('pointermove', move);
       handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
     });
 
     handle.addEventListener('keydown', (event) => {
-      const step = event.shiftKey ? 0.1 : 0.02;
-      const [x, y] = [Number(handle.dataset.x), Number(handle.dataset.y)];
-      const moves = {
-        ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step],
-      };
+      const step = event.shiftKey ? 0.1 : 0.01;
+      const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
       const delta = moves[event.key];
       if (!delta) return;
       event.preventDefault();
-      setBezier(index, clamp(x + delta[0], 0, 1), clamp(y + delta[1], EDITOR.yMin, EDITOR.yMax));
-      playTune();
+      const x = Number(handle.dataset.x) + delta[0];
+      const y = Number(handle.dataset.y) + delta[1];
+      setBezier(index, clamp(x, 0, 1), clamp(y, EDITOR.yMin, EDITOR.yMax));
     });
+    handle.addEventListener('keyup', (event) => { if (event.key.startsWith('Arrow')) playAll(); });
   }
 }
 
-function playTune() {
-  if ($('#view-tune').hidden) return;
-  playAll();
+const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// Dim bare numbers the way easing.dev does, so the curve values stand apart from the syntax.
+function highlight(code) {
+  return escapeHtml(code).replace(/(^|[^\w#.-])(-?\d*\.?\d+)(?![\w.])/g, '$1<span class="num">$2</span>');
 }
 
 function renderCode(r) {
   const code = snippets(r);
-  $$('#code-tabs .tab').forEach((tab) => {
-    tab.classList.toggle('is-active', tab.dataset.tab === state.codeTab);
-    tab.setAttribute('aria-selected', tab.dataset.tab === state.codeTab);
+  $$('#code-tabs .code-tab').forEach((tab) => {
+    const on = tab.dataset.tab === state.codeTab;
+    tab.classList.toggle('is-active', on);
+    tab.setAttribute('aria-selected', String(on));
   });
-  $('#code-out').textContent = code[state.codeTab] ?? code.CSS;
+  $('#code-out').innerHTML = highlight(code[state.codeTab] ?? code.CSS);
 }
 
 /* ----------------------------------------------------------------- views */
 
 function setView(view) {
   stopClock();
+  closePicker();
+  state.view = view;
   $('#view-compare').hidden = view !== 'compare';
   $('#view-tune').hidden = view !== 'tune';
-  $$('.views button').forEach((button) => {
-    const on = button.dataset.view === view;
-    button.classList.toggle('is-active', on);
-    button.setAttribute('aria-selected', on);
+  $$('.tabs .tab').forEach((tab) => {
+    const on = tab.dataset.view === view;
+    tab.classList.toggle('is-active', on);
+    tab.setAttribute('aria-selected', String(on));
   });
+  $('#add-easing').firstChild.textContent = view === 'tune' ? 'Change easing' : 'Add easing';
+  $('#add-easing').disabled = view === 'compare' && cards.length >= MAX_CARDS;
   if (view === 'tune') refreshTune({ rebuildDemo: true });
+  save();
   playAll();
 }
 
 /* ----------------------------------------------------------------- utils */
 
-async function copyText(text, trigger) {
-  const label = trigger?.textContent;
+async function copyText(text, onDone) {
   try {
     await navigator.clipboard.writeText(text);
-    if (trigger) { trigger.textContent = 'Copied'; setTimeout(() => { trigger.textContent = label; }, 1400); }
+    onDone?.();
   } catch {
     const area = document.createElement('textarea');
     area.value = text;
@@ -498,80 +549,72 @@ async function copyText(text, trigger) {
     area.className = 'copy-fallback';
     document.body.append(area);
     area.select();
-    if (trigger) { trigger.textContent = 'Select and copy'; setTimeout(() => { trigger.textContent = label; }, 2400); }
-    setTimeout(() => area.remove(), 2400);
+    try { document.execCommand('copy'); onDone?.(); } catch { /* the text stays selected for a manual copy */ }
+    setTimeout(() => area.remove(), 2000);
   }
 }
 
 /* ------------------------------------------------------------------ init */
 
 function initControls() {
-  const chips = $('#demo-chips');
-  for (const demo of DEMOS) {
-    const button = document.createElement('button');
-    button.className = `chip${demo.id === state.demo ? ' is-active' : ''}`;
-    button.textContent = demo.name;
-    button.dataset.demo = demo.id;
-    button.addEventListener('click', () => {
-      state.demo = demo.id;
-      $$('#demo-chips .chip').forEach((c) => c.classList.toggle('is-active', c.dataset.demo === demo.id));
-      buildGrid();
-      refreshTune({ rebuildDemo: true });
-      playAll();
-    });
-    chips.append(button);
-  }
-
-  const speeds = $('#speed-chips');
-  for (const speed of [1, 0.5, 0.25]) {
-    const button = document.createElement('button');
-    button.className = `chip${speed === state.speed ? ' is-active' : ''}`;
-    button.textContent = `${speed}x`;
-    button.dataset.speed = speed;
-    button.addEventListener('click', () => {
-      state.speed = speed;
-      $$('#speed-chips .chip').forEach((c) => c.classList.toggle('is-active', Number(c.dataset.speed) === speed));
-      save();
-      playAll();
-    });
-    speeds.append(button);
-  }
-
-  const duration = $('#duration');
-  duration.value = state.durationMs;
-  $('#duration-out').textContent = `${state.durationMs}ms`;
-  duration.addEventListener('input', () => {
-    state.durationMs = Number(duration.value);
-    $('#duration-out').textContent = `${state.durationMs}ms`;
-    refreshCards();
-    if (!$('#view-tune').hidden) refreshTune();
+  renderFilters($('#demo-chips'), DEMOS.map((d) => ({ value: d.id, label: d.name })), state.demo, (id) => {
+    state.demo = id;
+    buildGrid();
+    refreshTune({ rebuildDemo: true });
+    playAll();
   });
-  duration.addEventListener('change', playAll);
 
-  const loop = $('#loop');
-  loop.checked = state.loop;
-  loop.disabled = REDUCED;
-  loop.addEventListener('change', () => {
-    state.loop = loop.checked;
+  renderFilters($('#speed-chips'), [1, 0.5, 0.25].map((s) => ({ value: s, label: `${s}×` })), state.speed, (speed) => {
+    state.speed = speed;
     save();
     playAll();
   });
 
-  $('#replay').addEventListener('click', playAll);
-  $$('.views button').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
-
-  const picker = $('#picker');
-  $('#toggle-picker').addEventListener('click', (event) => {
-    picker.hidden = !picker.hidden;
-    event.currentTarget.setAttribute('aria-expanded', String(!picker.hidden));
-    if (!picker.hidden) $('#picker-search').focus();
+  const duration = $('#duration');
+  setRange(duration, state.durationMs);
+  $('#duration-out').textContent = `${state.durationMs}ms`;
+  duration.addEventListener('input', () => {
+    syncRange(duration);
+    state.durationMs = Number(duration.value);
+    $('#duration-out').textContent = `${state.durationMs}ms`;
+    stopClock();
+    refreshCards();
+    showEnd(cards);
   });
-  $('#picker-search').addEventListener('input', (event) => filterPicker(event.target.value));
+  duration.addEventListener('change', () => playAll());
 
-  $('#tune-easing').addEventListener('change', (event) => {
-    state.tune = { id: event.target.value };
+  const loop = $('#loop');
+  loop.setAttribute('aria-pressed', String(state.loop && !REDUCED));
+  loop.disabled = REDUCED;
+  loop.addEventListener('click', () => {
+    state.loop = !state.loop;
+    loop.setAttribute('aria-pressed', String(state.loop));
+    save();
+    playAll();
+  });
+
+  $('#replay').addEventListener('click', () => playAll());
+  $('#tune-replay').addEventListener('click', () => playAll());
+  $$('.tabs .tab').forEach((tab) => tab.addEventListener('click', () => setView(tab.dataset.view)));
+
+  const addButton = $('#add-easing');
+  addButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if ($('#picker').hidden) openPicker(); else closePicker();
+  });
+  $('#picker').addEventListener('click', (event) => event.stopPropagation());
+  document.addEventListener('click', closePicker);
+
+  for (const [key, index, axis] of [['x1', 0, 0], ['y1', 0, 1], ['x2', 1, 0], ['y2', 1, 1]]) {
+    $(`#p-${key}`).addEventListener('input', (event) => {
+      const value = Number(event.target.value);
+      const current = currentBezier();
+      setBezier(index, axis === 0 ? value : current[index * 2], axis === 1 ? value : current[index * 2 + 1]);
+    });
+  }
+  $('#tune-ms').addEventListener('input', (event) => {
+    state.tune = { ...state.tune, durationMs: Number(event.target.value) };
     refreshTune();
-    playTune();
   });
   $('#tune-duration').addEventListener('input', (event) => {
     state.tune = { ...state.tune, duration: Number(event.target.value) };
@@ -581,43 +624,38 @@ function initControls() {
     state.tune = { ...state.tune, bounce: Number(event.target.value) };
     refreshTune();
   });
-  for (const [key, index, axis] of [['x1', 0, 0], ['y1', 0, 1], ['x2', 1, 0], ['y2', 1, 1]]) {
-    $(`#p-${key}`).addEventListener('input', (event) => {
-      const value = Number(event.target.value);
-      const current = currentBezier();
-      const x = axis === 0 ? value : current[index * 2];
-      const y = axis === 1 ? value : current[index * 2 + 1];
-      setBezier(index, x, y);
-    });
-  }
-
-  $('#tune-ms').addEventListener('input', (event) => {
-    state.tune = { ...state.tune, durationMs: Number(event.target.value) };
-    refreshTune();
+  $$('#tune-panel input[type="range"]').forEach((input) => {
+    input.addEventListener('pointerdown', stopClock);
+    input.addEventListener('change', () => playAll());
   });
-  $$('#tune-panel input[type="range"]').forEach((input) => input.addEventListener('change', playTune));
-  $('#tune-easing').addEventListener('keyup', playTune);
 
   $('#tune-reset').addEventListener('click', () => {
     state.tune = { id: state.tune.id };
     refreshTune();
-    playTune();
+    playAll();
   });
   $('#tune-add').addEventListener('click', () => {
-    addCard({ ...state.tune });
+    const config = { ...state.tune };
     setView('compare');
+    addCard(config);
   });
-  $('#tune-replay').addEventListener('click', playAll);
 
-  $$('#code-tabs .tab').forEach((tab) => tab.addEventListener('click', () => {
+  $$('#code-tabs .code-tab').forEach((tab) => tab.addEventListener('click', () => {
     state.codeTab = tab.dataset.tab;
     renderCode(tuneCard.resolved);
     save();
   }));
-  $('#copy-code').addEventListener('click', (event) => copyText($('#code-out').textContent, event.currentTarget));
+  $('#copy-code').addEventListener('click', (event) => {
+    const button = event.currentTarget;
+    copyText($('#code-out').textContent, () => {
+      button.textContent = 'Copied';
+      setTimeout(() => { button.textContent = 'Copy'; }, 1200);
+    });
+  });
 
   document.addEventListener('keydown', (event) => {
-    if (event.key !== ' ' || event.target.matches('input, select, textarea, button')) return;
+    if (event.key === 'Escape') { closePicker(); return; }
+    if (event.key !== ' ' || event.target.matches('input, select, textarea, button, [tabindex]')) return;
     event.preventDefault();
     playAll();
   });
@@ -629,12 +667,14 @@ function init() {
   buildPicker();
   buildTune();
   initEditorDragging();
-  setView('compare');
+  setView(state.view === 'tune' ? 'tune' : 'compare');
   if (REDUCED) {
     $('#reduced-note').hidden = false;
-    cards.forEach((card) => { card.apply(1); card.plot.setProgress(1); });
+    showEnd(activeCards());
   } else {
-    setTimeout(playAll, 420);
+    stopClock();
+    activeCards().forEach((card) => { card.apply(0); card.plot.setProgress(0); });
+    setTimeout(() => playAll({ auto: true }), 400);
   }
 }
 

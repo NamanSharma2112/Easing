@@ -8,12 +8,12 @@ see it move a real bottom sheet.
 
 ## What it does
 
-- **Compare** up to six curves at once on one of six interactions: bottom sheet, dialog,
-  toast, staggered list, toggle and tab switch. Every card plays off the same clock, so the
+- **Compare** up to six curves at once on one of six interactions: sheet, dialog,
+  toast, staggered list, toggle and tabs. Every card plays off the same clock, so the
   difference you see is the curve and nothing else.
 - **Slow it down** to 0.5x or 0.25x. Most curves look identical at full speed over short
   distances; at a quarter speed they do not.
-- **Tune** a curve by dragging the bezier handles, or by setting a spring's duration and
+- **Tune** a curve by dragging the bezier handles or the x1/y1/x2/y2 sliders, or by setting a spring's duration and
   bounce, and copy the result as CSS, Motion, SwiftUI or Tailwind.
 - 36 curves in the library: the CSS standards, the full power set (sine through circ),
   the back/anticipation curves, Material 3's system curves and seven springs.

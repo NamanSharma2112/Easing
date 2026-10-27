@@ -83,14 +83,14 @@ export function createPlot({ width = 260, height = 96, inset = 8 } = {}) {
   return { svg, setCurve, setProgress };
 }
 
-// Small static curve used in the picker and the library list.
-export function miniCurve(fn, { width = 44, height = 26 } = {}) {
-  const pts = sample(fn, 32);
+// Square thumbnail used in the picker, drawn like a tile on easing.dev.
+export function miniCurve(fn, { size = 100, pad = 18 } = {}) {
+  const pts = sample(fn, 60);
   const [lo, hi] = extent([pts]);
-  const x = (t) => 2 + t * (width - 4);
-  const y = (v) => height - 3 - ((v - lo) / (hi - lo || 1)) * (height - 6);
+  const x = (t) => pad + t * (size - pad * 2);
+  const y = (v) => size - pad - ((v - lo) / (hi - lo || 1)) * (size - pad * 2);
   const d = pts.map(([t, v], i) => `${i ? 'L' : 'M'}${x(t).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
-  const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, class: 'mini', 'aria-hidden': 'true' });
+  const svg = el('svg', { viewBox: `0 0 ${size} ${size}`, class: 'mini', 'aria-hidden': 'true' });
   svg.append(el('path', { d, class: 'mini-line', fill: 'none' }));
   return svg;
 }
