@@ -43,10 +43,11 @@ export function createPlot({ width = 260, height = 96, inset = 8 } = {}) {
   const target = el('line', { class: 'plot-target', x1: inset, x2: width - inset });
   const base = el('line', { class: 'plot-base', x1: inset, x2: width - inset });
   const ghost = el('path', { class: 'plot-ghost', d: '', fill: 'none' });
+  const marker = el('line', { class: 'plot-marker', x1: 0, x2: 0, y1: 0, y2: height, visibility: 'hidden' });
   const full = el('path', { class: 'plot-line', d: '', fill: 'none' });
   const traced = el('path', { class: 'plot-traced', d: '', fill: 'none' });
   const head = el('circle', { class: 'plot-head', r: 3.5, cx: inset, cy: height - inset });
-  svg.append(base, target, ghost, full, traced, head);
+  svg.append(base, target, marker, ghost, full, traced, head);
 
   let points = [];
   let range = [0, 1];
@@ -80,7 +81,15 @@ export function createPlot({ width = 260, height = 96, inset = 8 } = {}) {
     head.setAttribute('cy', y(v));
   }
 
-  return { svg, setCurve, setProgress };
+  // A vertical rule where the run was interrupted; null hides it.
+  function setMarker(t) {
+    if (t == null) { marker.setAttribute('visibility', 'hidden'); return; }
+    marker.setAttribute('x1', x(t));
+    marker.setAttribute('x2', x(t));
+    marker.setAttribute('visibility', 'visible');
+  }
+
+  return { svg, setCurve, setProgress, setMarker };
 }
 
 // Square thumbnail used in the picker, drawn like a tile on easing.dev.

@@ -11,6 +11,10 @@ see it move a real bottom sheet.
 - **Compare** up to six curves at once on one of six interactions: sheet, dialog,
   toast, staggered list, toggle and tabs. Every card plays off the same clock, so the
   difference you see is the curve and nothing else.
+- **Interrupt** every card halfway and reverse it. A timing curve drops its speed and
+  restarts its curve, so its graph turns a sharp corner; a spring carries its speed into the
+  new direction and turns smoothly. That difference is the real reason to use springs.
+  Press Interrupt again mid-run to send it back.
 - **Slow it down** to 0.5x or 0.25x. Most curves look identical at full speed over short
   distances; at a quarter speed they do not.
 - **Tune** a curve by dragging the bezier handles or the x1/y1/x2/y2 sliders, or by setting a spring's duration and
@@ -63,6 +67,11 @@ Internally that maps to a damping ratio (`1 - bounce` when bounce is positive,
 underdamped, critically damped or overdamped case as needed. Because a spring keeps moving
 after its nominal duration, the settle time is found numerically and shown on each card.
 
+Interruptions follow what each kind of animation really does. A reversed CSS transition is
+shortened by how far it had travelled (the spec's reversing shortening factor) and replays its
+curve from the start. A spring is re-solved from its current position and velocity towards the
+new target, which is why it never stutters.
+
 CSS output for springs is a sampled [`linear()`](https://developer.mozilla.org/en-US/docs/Web/CSS/easing-function#linear_easing_function)
 easing, which is how you run a real spring through a CSS transition.
 
@@ -72,6 +81,7 @@ easing, which is how you run a real spring through a CSS transition.
 src/body.html    page markup, the single source for both entry points
 styles.css       tokens and all styling
 js/easings.js    curve math, the library, code generation
+js/motion.js     playback over time, and interruption
 js/curve.js      SVG plotting
 js/demos.js      the UI blocks inside the phone
 js/app.js        state, grid, playback clock, tuning bench

@@ -1,12 +1,14 @@
 // The UI blocks shown inside the phone. Each demo builds its own markup and
-// returns apply(v, p, r): v is the eased progress (it may overshoot past 1),
-// p the linear progress and r the resolved curve. Most demos only need v.
+// returns apply(v, at): v is the current position (it may overshoot past 1), and
+// at(ms) gives the position that many ms earlier, for demos that stagger.
 //
 // Overlay demos (sheet, dialog, toast) sit on top of a full app screen. In-flow
 // demos (list, toggle, tabs) own the screen below the status bar, so nothing
 // they draw can land on top of unrelated content.
 
 const lerp = (a, b, t) => a + (b - a) * t;
+const STAGGER_MS = 50;
+const LIST_ROWS = 5;
 const unit = (v) => Math.min(1, Math.max(0, v));
 
 const STATUS = `
@@ -90,8 +92,10 @@ export const DEMOS = [
   {
     id: 'list',
     name: 'List',
+    // The last row starts this much later, so a run lasts this much longer.
+    lagMs: STAGGER_MS * (LIST_ROWS - 1),
     create(screen) {
-      const widths = [[64, 38], [52, 44], [70, 30], [48, 40], [58, 34]];
+      const widths = [[64, 38], [52, 44], [70, 30], [48, 40], [58, 34]].slice(0, LIST_ROWS);
       const rows = widths.map(([a, b]) => `
         <div class="ui-item">
           <div class="ui-avatar"></div>
@@ -101,16 +105,12 @@ export const DEMOS = [
         <div class="ui-heading"><span style="width:46%"></span></div>
         <div class="ui-list">${rows}</div>`);
       const items = [...q('.ui-list').children];
-      const STAGGER_MS = 50;
-      // Stagger in time, then run each row through the same curve. Staggering the
-      // eased value instead would push early rows past their resting place.
-      return (v, p, r) => {
-        const offset = r ? Math.min(0.12, STAGGER_MS / r.totalMs) : 0;
-        const span = 1 - offset * (items.length - 1);
+      // Every row runs the whole motion, each one 50ms behind the last. Sampling
+      // the motion in time (rather than offsetting the eased value) means rows
+      // land exactly, and an interruption reverses each row from where it is.
+      return (v, at) => {
         items.forEach((item, i) => {
-          const local = r && p !== undefined
-            ? r.fn(Math.min(1, Math.max(0, (p - offset * i) / span)))
-            : v;
+          const local = at ? at(i * STAGGER_MS) : v;
           item.style.transform = `translate3d(0, ${(1 - local) * 16}px, 0)`;
           item.style.opacity = unit(local * 1.5);
         });

@@ -284,6 +284,7 @@ input[type="range"]::-moz-range-thumb { width: 6px; height: 22px; border: 0; bor
 .plot-traced { stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
 .plot-ghost { stroke: var(--fg-4); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
 .plot-head { fill: var(--accent); }
+.plot-marker { stroke: var(--fg-3); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
 
 /* ---------------------------------------------------------------- phone */
 
@@ -411,6 +412,7 @@ input[type="range"]::-moz-range-thumb { width: 6px; height: 22px; border: 0; bor
 .slider-row.is-inline { grid-template-columns: auto 180px 58px; gap: 12px; }
 .slider-row.is-inline output { font-size: 12.5px; }
 .playback-end { display: flex; align-items: center; gap: 24px; }
+.interrupt-note { margin-top: 16px; max-width: 62ch; font-size: 13px; line-height: 1.6; color: var(--fg-3); }
 
 /* ----------------------------------------------------------------- tune */
 
@@ -506,7 +508,7 @@ input[type="range"]::-moz-range-thumb { width: 6px; height: 22px; border: 0; bor
   .editor { width: 100%; }
   .playback { flex-direction: column; align-items: stretch; }
   .slider-row.is-inline { grid-template-columns: auto minmax(0, 1fr) 58px; }
-  .playback-end { justify-content: space-between; }
+  .playback-end { justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 }
 
 @media (prefers-reduced-motion: reduce) {

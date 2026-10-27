@@ -57,10 +57,18 @@
       </div>
       <div class="playback-end">
         <div class="filters" id="speed-chips" role="group" aria-label="Playback speed"></div>
+        <button type="button" id="interrupt" class="text-btn"
+          title="Reverse every card mid-flight. Press again during a run to send it back.">Interrupt</button>
         <button type="button" id="loop" class="text-btn" aria-pressed="false">Loop</button>
         <button type="button" id="replay" class="text-btn is-strong">Replay</button>
       </div>
     </div>
+
+    <p id="interrupt-note" class="interrupt-note" hidden>
+      Reversed halfway. A timing curve drops the speed it had and starts its curve over in the new direction,
+      so its graph turns a sharp corner, which reads as a stutter. A spring keeps its speed and turns smoothly.
+      Press Interrupt during a run to reverse it again.
+    </p>
   </section>
 
   <section id="view-tune" class="view" hidden>

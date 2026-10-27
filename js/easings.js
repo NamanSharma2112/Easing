@@ -49,34 +49,50 @@ export function cubicBezier(x1, y1, x2, y2) {
 //   bounce  > 0  underdamped, overshoots and settles back
 //   bounce == 0  critically damped, the fastest approach with no overshoot
 //   bounce  < 0  overdamped, slides in slowly with no overshoot
-export function springFunction(duration, bounce) {
+//
+// springMotion solves the general case: start anywhere, at any speed, heading for
+// any target. That is what makes a spring interruptible: when the target changes
+// mid-flight it carries its current position and velocity into the new motion.
+// Time is in seconds, velocity in progress units per second.
+export function springMotion(duration, bounce, { from = 0, velocity = 0, to = 1 } = {}) {
   const d = Math.max(0.05, duration);
   const zeta = bounce >= 0 ? 1 - bounce : 1 / (1 + bounce);
   const w0 = (2 * Math.PI) / d;
+  const y0 = from - to;
+  const v0 = velocity;
+  let offset;
 
   if (Math.abs(zeta - 1) < 1e-4) {
-    return (tau) => 1 - (1 + w0 * tau) * Math.exp(-w0 * tau);
-  }
-  if (zeta < 1) {
+    const b = v0 + w0 * y0;
+    offset = (tau) => (y0 + b * tau) * Math.exp(-w0 * tau);
+  } else if (zeta < 1) {
     const wd = w0 * Math.sqrt(1 - zeta * zeta);
-    return (tau) =>
-      1 - Math.exp(-zeta * w0 * tau) * (Math.cos(wd * tau) + ((zeta * w0) / wd) * Math.sin(wd * tau));
+    const b = (v0 + zeta * w0 * y0) / wd;
+    offset = (tau) => Math.exp(-zeta * w0 * tau) * (y0 * Math.cos(wd * tau) + b * Math.sin(wd * tau));
+  } else {
+    const r = w0 * Math.sqrt(zeta * zeta - 1);
+    const r1 = -zeta * w0 + r;
+    const r2 = -zeta * w0 - r;
+    const c1 = (v0 - r2 * y0) / (r1 - r2);
+    const c2 = y0 - c1;
+    offset = (tau) => c1 * Math.exp(r1 * tau) + c2 * Math.exp(r2 * tau);
   }
-  const r = w0 * Math.sqrt(zeta * zeta - 1);
-  const a = -zeta * w0 + r;
-  const b = -zeta * w0 - r;
-  return (tau) => 1 + (b * Math.exp(a * tau) - a * Math.exp(b * tau)) / (a - b);
+  return (tau) => to + offset(tau);
 }
+
+// The plain 0 to 1 spring, starting at rest.
+export const springFunction = (duration, bounce) => springMotion(duration, bounce);
 
 // The spring keeps moving after its nominal duration. Find the point where it is
 // close enough to the target to stop drawing and stop animating.
-export function springSettleTime(duration, bounce, epsilon = 0.001) {
-  const motion = springFunction(duration, bounce);
+export function springSettleTime(duration, bounce, state = {}, epsilon = 0.001) {
+  const motion = springMotion(duration, bounce, state);
+  const to = state.to ?? 1;
   const limit = Math.max(duration * 4, duration + 2);
   const step = limit / 600;
-  let settled = duration;
+  let settled = 0;
   for (let tau = 0; tau <= limit; tau += step) {
-    if (Math.abs(motion(tau) - 1) > epsilon) settled = tau;
+    if (Math.abs(motion(tau) - to) > epsilon) settled = tau;
   }
   return Math.min(limit, settled + step * 2);
 }

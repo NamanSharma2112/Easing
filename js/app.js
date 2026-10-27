@@ -1,6 +1,7 @@
 import { LIBRARY, byId, resolve, snippets, round, clamp } from './easings.js';
 import { createPlot, sample, extent, miniCurve } from './curve.js';
 import { DEMOS, demoById } from './demos.js';
+import { forwardMotion, interruptMotion, traceOf } from './motion.js';
 
 const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const STORE_KEY = 'easing-lab-state-v2';
@@ -17,7 +18,7 @@ const defaults = () => ({
   durationMs: 300,
   speed: 1,
   loop: false,
-  cards: [{ id: 'ease' }, { id: 'spring-smooth' }, { id: 'spring-bouncy' }],
+  cards: [{ id: 'ease-out' }, { id: 'spring-smooth' }, { id: 'spring-bouncy' }],
   tune: { id: 'spring-bouncy' },
   codeTab: 'CSS',
   pickerGroup: 'All',
@@ -39,9 +40,12 @@ function save() {
 const state = load();
 let cards = [];       // live card instances in the compare grid
 let tuneCard = null;  // the single preview on the tuning bench
+let running = [];     // cards in the current run
 let rafId = null;
 let holdId = null;
 let startTime = 0;
+let pendingInterrupt = null; // ms into the run at which to reverse, if scheduled
+let lastRun = 'replay';
 
 /* ---------------------------------------------------------------- inputs */
 
@@ -104,6 +108,7 @@ function toolButton(act, icon, label) {
 }
 
 function buildGrid() {
+  stopClock();
   const grid = $('#grid');
   grid.innerHTML = '';
 
@@ -155,16 +160,13 @@ function buildGrid() {
 }
 
 function refreshCards() {
-  cards.forEach((card) => { card.resolved = resolveCard(card.config); });
-
-  // One vertical scale for every card, so a spring's overshoot reads as larger
-  // than a timing curve's flat finish when they sit side by side.
-  const curves = cards.map((card) => sample(card.resolved.fn));
-  const range = extent(curves);
-
-  cards.forEach((card, i) => {
+  cards.forEach((card) => {
+    card.resolved = resolveCard(card.config);
+    card.motion = forwardMotion(card.resolved);
+  });
+  plotRun(cards);
+  cards.forEach((card) => {
     const r = card.resolved;
-    card.plot.setCurve(curves[i], range);
     $('h3', card.label).textContent = r.name;
     $('p', card.label).textContent = shortParams(r);
     card.apply(REDUCED ? 1 : 0);
@@ -200,11 +202,15 @@ function flashDone(button) {
 
 /* -------------------------------------------------------------- playback */
 
+// Every card plays a motion: where it is at each ms of the run. Plain playback
+// is the curve from 0 to 1; an interruption joins a reversal onto it.
+
 function stopClock() {
   if (rafId) cancelAnimationFrame(rafId);
   if (holdId) clearTimeout(holdId);
   rafId = null;
   holdId = null;
+  pendingInterrupt = null;
 }
 
 function activeCards() {
@@ -216,33 +222,78 @@ function showEnd(list) {
   list.forEach((card) => { card.apply(1); card.plot.setProgress(1); });
 }
 
+// Plot what each card will actually do over the run, on one shared vertical
+// scale, so a spring's overshoot reads as larger than a flat finish next to it.
+function plotRun(list, markerMs = null) {
+  const traces = list.map((card) => traceOf(card.motion));
+  const range = extent(traces);
+  list.forEach((card, i) => {
+    card.plot.setCurve(traces[i], range);
+    card.plot.setMarker?.(markerMs === null ? null : markerMs / card.motion.totalMs);
+  });
+}
+
+// Timing curves are interrupted halfway through, the textbook case.
+const interruptPoint = () => Math.round(state.durationMs / 2);
+
 // Reduced motion stops anything starting by itself. An explicit Replay still
 // plays, because watching the curve is the whole reason the page exists.
-function playAll({ auto = false } = {}) {
+function playAll({ auto = false, interruptAt = null } = {}) {
   stopClock();
-  const running = activeCards();
+  running = activeCards();
   if (!running.length) return;
+  lastRun = interruptAt === null ? 'replay' : 'interrupt';
+  running.forEach((card) => {
+    card.motion = forwardMotion(card.resolved);
+    card.target = 1;
+  });
+  plotRun(running);
   if (REDUCED && auto) { showEnd(running); return; }
+  pendingInterrupt = interruptAt;
   startTime = performance.now();
   rafId = requestAnimationFrame(frame);
 }
 
+function reverseAt(ms) {
+  running.forEach((card) => {
+    const to = card.target === 1 ? 0 : 1;
+    card.motion = interruptMotion(card.motion, card.resolved, ms, to);
+    card.target = to;
+  });
+  plotRun(running, ms);
+  $('#interrupt-note').hidden = false;
+}
+
+// Mid-run, reverse right now; press again to send it back. From rest, play and
+// reverse automatically at the halfway point of the timing curves.
+function interrupt() {
+  if (state.view !== 'compare') return;
+  if (!rafId) { playAll({ interruptAt: interruptPoint() }); return; }
+  pendingInterrupt = null;
+  reverseAt((performance.now() - startTime) * state.speed);
+}
+
 function frame(now) {
-  const running = activeCards();
   const elapsed = (now - startTime) * state.speed;
+  if (pendingInterrupt !== null && elapsed >= pendingInterrupt) {
+    reverseAt(pendingInterrupt);
+    pendingInterrupt = null;
+  }
+  const lag = state.view === 'tune' ? 0 : demoById(state.demo).lagMs ?? 0;
   let done = true;
   for (const card of running) {
-    const p = clamp(elapsed / card.resolved.totalMs, 0, 1);
-    card.apply(card.resolved.fn(p), p, card.resolved);
-    card.plot.setProgress(p);
-    if (p < 1) done = false;
+    const { motion } = card;
+    card.apply(motion.pos(elapsed), (delay) => motion.pos(elapsed - delay));
+    card.plot.setProgress(elapsed / motion.totalMs);
+    if (elapsed < motion.totalMs + lag) done = false;
   }
   if (!done) { rafId = requestAnimationFrame(frame); return; }
   rafId = null;
   if (state.loop && !REDUCED) {
+    const again = lastRun === 'interrupt' ? interruptPoint() : null;
     holdId = setTimeout(() => {
       running.forEach((card) => { card.apply(0); card.plot.setProgress(0); });
-      holdId = setTimeout(() => playAll({ auto: true }), 140);
+      holdId = setTimeout(() => playAll({ auto: true, interruptAt: again }), 140);
     }, HOLD_MS);
   }
 }
@@ -594,6 +645,7 @@ function initControls() {
   });
 
   $('#replay').addEventListener('click', () => playAll());
+  $('#interrupt').addEventListener('click', interrupt);
   $('#tune-replay').addEventListener('click', () => playAll());
   $$('.tabs .tab').forEach((tab) => tab.addEventListener('click', () => setView(tab.dataset.view)));
 
