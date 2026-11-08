@@ -554,7 +554,7 @@ const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace
 
 // Dim bare numbers the way easing.dev does, so the curve values stand apart from the syntax.
 function highlight(code) {
-  return escapeHtml(code).replace(/(^|[^\w#.-])(-?\d*\.?\d+)(?![\w.])/g, '$1<span class="num">$2</span>');
+  return escapeHtml(code).replace(/(^|[^\w#.-])(-?\d*\.?\d+f?)(?![\w.])/g, '$1<span class="num">$2</span>');
 }
 
 function renderCode(r) {

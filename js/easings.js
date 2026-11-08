@@ -250,10 +250,18 @@ export function toLinearEasing(fn, steps = 28, { wrap = false } = {}) {
 export function snippets(r, property = 'transform') {
   if (r.type === 'spring') {
     const ms = Math.round(r.totalMs);
+    const d = round(r.duration, 2);
+    const b = round(r.bounce, 2);
+    // Compose takes the same spring as damping ratio and stiffness (mass 1), which
+    // is an exact conversion of duration and bounce, not an approximation.
+    const ratio = round(r.bounce >= 0 ? 1 - r.bounce : 1 / (1 + r.bounce), 3);
+    const stiffness = round(((2 * Math.PI) / r.duration) ** 2, 1);
     return {
       CSS: `/* ${r.name} as a sampled CSS easing */\n.element {\n  transition: ${property} ${ms}ms ${toLinearEasing(r.fn, 28, { wrap: true })};\n}`,
-      Motion: `animate(element, { ${property}: "translateY(0)" }, {\n  type: "spring",\n  duration: ${round(r.duration, 2)},\n  bounce: ${round(r.bounce, 2)},\n})`,
-      SwiftUI: `withAnimation(.spring(duration: ${round(r.duration, 2)}, bounce: ${round(r.bounce, 2)})) {\n    isPresented = true\n}`,
+      Motion: `animate(element, { ${property}: "translateY(0)" }, {\n  type: "spring",\n  duration: ${d},\n  bounce: ${b},\n})`,
+      SwiftUI: `withAnimation(.spring(duration: ${d}, bounce: ${b})) {\n    isPresented = true\n}`,
+      UIKit: `// iOS 17 and later\nUIView.animate(springDuration: ${d}, bounce: ${b}) {\n    sheet.transform = .identity\n}`,
+      Compose: `// Same spring as .spring(duration: ${d}, bounce: ${b})\nval offset by animateFloatAsState(\n    targetValue = if (open) 0f else 1f,\n    animationSpec = spring(dampingRatio = ${ratio}f, stiffness = ${stiffness}f),\n)`,
       Tailwind: `<!-- Tailwind has no spring utility. Use the sampled curve: -->\n<div class="transition-${property === 'transform' ? 'transform' : 'all'} duration-[${ms}ms] ease-[${toLinearEasing(r.fn, 16)}]">`,
     };
   }
@@ -263,6 +271,8 @@ export function snippets(r, property = 'transform') {
     CSS: `.element {\n  transition: ${property} ${ms}ms cubic-bezier(${v.join(', ')});\n}`,
     Motion: `animate(element, { ${property}: "translateY(0)" }, {\n  duration: ${round(ms / 1000, 2)},\n  ease: [${v.join(', ')}],\n})`,
     SwiftUI: `withAnimation(.timingCurve(${v.join(', ')}, duration: ${round(ms / 1000, 2)})) {\n    isPresented = true\n}`,
+    UIKit: `let animator = UIViewPropertyAnimator(\n    duration: ${round(ms / 1000, 2)},\n    controlPoint1: CGPoint(x: ${v[0]}, y: ${v[1]}),\n    controlPoint2: CGPoint(x: ${v[2]}, y: ${v[3]})\n) {\n    sheet.transform = .identity\n}\nanimator.startAnimation()`,
+    Compose: `val offset by animateFloatAsState(\n    targetValue = if (open) 0f else 1f,\n    animationSpec = tween(\n        durationMillis = ${ms},\n        easing = CubicBezierEasing(${v.map((n) => `${n}f`).join(', ')}),\n    ),\n)`,
     Tailwind: `<div class="transition-transform duration-[${ms}ms] ease-[cubic-bezier(${v.join(',')})]">`,
   };
 }

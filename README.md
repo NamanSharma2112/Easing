@@ -18,7 +18,7 @@ see it move a real bottom sheet.
 - **Slow it down** to 0.5x or 0.25x. Most curves look identical at full speed over short
   distances; at a quarter speed they do not.
 - **Tune** a curve by dragging the bezier handles or the x1/y1/x2/y2 sliders, or by setting a spring's duration and
-  bounce, and copy the result as CSS, Motion, SwiftUI or Tailwind.
+  bounce, and copy the result as CSS, Motion, SwiftUI, UIKit, Jetpack Compose or Tailwind.
 - 36 curves in the library: the CSS standards, the full power set (sine through circ),
   the back/anticipation curves, Material 3's system curves and seven springs.
 
