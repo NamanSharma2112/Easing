@@ -1,0 +1,71 @@
+/* Layout for the prototype page only. Everything else comes from the site's styles.css. */
+
+.proto-page { padding-bottom: 120px; }
+.proto-tag { font-size: 13px; color: var(--fg-3); }
+.proto-head { margin-bottom: 24px; }
+.proto-head h2 { font-size: 16px; font-weight: 500; }
+.proto-head p { margin-top: 6px; max-width: 62ch; font-size: 13px; line-height: 1.6; color: var(--fg-3); }
+
+.proto-grid .card { cursor: default; }
+/* The sheet is dragged vertically; horizontal pans still scroll the page. */
+.screen { touch-action: pan-x; }
+.ui-sheet { cursor: grab; }
+.is-dragging .ui-sheet { cursor: grabbing; }
+
+.proto-readout { margin-top: 24px; min-height: 21px; font-size: 14px; color: var(--fg); font-variant-numeric: tabular-nums; }
+.proto-legend { margin-top: 8px; max-width: 70ch; font-size: 13px; line-height: 1.6; color: var(--fg-3); }
+.key-finger, .key-curve { display: inline-block; width: 14px; height: 2px; margin: 0 6px 3px 0; border-radius: 2px; vertical-align: middle; }
+.key-finger { background: var(--fg-3); }
+.key-curve { background: var(--accent); margin-left: 10px; }
+.trace-finger { stroke: var(--fg-3); stroke-width: 2; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+
+.proto-controls { margin-top: 28px; }
+
+/* Trace */
+.trace-layout { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 36px; align-items: start; }
+.trace-phone { padding: 20px 24px; border: 1px solid var(--border); border-radius: 8px; }
+.trace-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.speed-chart {
+  border-radius: 8px;
+  background-image: radial-gradient(circle, var(--dot) 0.8px, transparent 1.1px);
+  background-size: 14px 14px; background-position: 7px 7px;
+}
+.speed-svg { display: block; width: 100%; height: auto; }
+.speed-frame { fill: none; stroke: var(--border); }
+.speed-hint { fill: var(--fg-3); font-size: 13px; font-family: var(--font-ui); }
+.speed-axis { fill: var(--fg-3); font-size: 11px; font-family: var(--font-ui); font-variant-numeric: tabular-nums; }
+.speed-axis.is-faint { fill: var(--fg-4); }
+.speed-zero { stroke: var(--border-strong); stroke-dasharray: 2 4; }
+.speed-release { stroke: var(--fg-4); stroke-dasharray: 3 4; }
+.speed-finger { stroke: var(--fg-2); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.speed-selected { stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.speed-other { stroke: var(--fg-4); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.speed-dot { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
+.speed-dot-other { fill: var(--fg-4); }
+.speed-playhead { stroke: var(--fg-2); stroke-width: 1; opacity: 0.5; }
+
+.speed-list { display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.speed-row {
+  appearance: none; cursor: pointer; text-align: left;
+  display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 2px 16px; align-items: baseline;
+  padding: 10px 0; border: 0; border-bottom: 1px solid var(--border); background: none;
+  font-size: 13px; color: var(--fg-3);
+  transition: color 150ms ease;
+}
+.speed-row strong { font-weight: 500; }
+.speed-row.is-active { color: var(--fg); }
+.speed-params { color: var(--fg-4); font-size: 12px; }
+.speed-start { grid-column: 2; font-variant-numeric: tabular-nums; }
+.speed-start:empty { display: none; }
+.speed-start em { font-style: normal; margin-left: 8px; }
+.speed-start .is-match { color: var(--fg-2); }
+.speed-start .is-step { color: var(--accent); }
+
+@media (hover: hover) and (pointer: fine) {
+  .speed-row:not(.is-active):hover { color: var(--fg-2); }
+}
+
+@media (max-width: 720px) {
+  .trace-layout { grid-template-columns: 1fr; }
+  .trace-phone { display: flex; justify-content: center; }
+}
