@@ -22,6 +22,32 @@ see it move a real bottom sheet.
 - 36 curves in the library: the CSS standards, the full power set (sine through circ),
   the back/anticipation curves, Material 3's system curves and seven springs.
 
+## Accessibility
+
+Checked with axe-core (WCAG 2.2 AA and best practice: no violations) and a keyboard and
+screen reader walkthrough.
+
+- **Keyboard.** Every control is reachable. Interaction, playback speed and easing family are
+  single radio groups (one Tab stop, arrow keys to choose); the views and code formats are
+  tabs with arrow-key navigation. Space replays from anywhere that doesn't already use it.
+  The Add easing dropdown takes focus when it opens and gives it back on Escape.
+- **Screen readers.** The phone mocks are hidden; each card is named by its curve and
+  described by what the curve does. Adding, removing, copying, interrupting and resetting
+  are announced. Card buttons name their curve ("Remove Ease out").
+- **Reduced motion.** Nothing plays or loops by itself. Replay steps through six frames
+  instead of moving, so every state is still shown; a visible switch turns smooth playback
+  back on for people who want it.
+- **Targets and contrast.** Every control is at least 24 by 24px, with larger touch areas on
+  touch screens. `prefers-contrast: more` brightens secondary text and underlines the current
+  choice; Windows high contrast keeps the phone mocks readable and restores native sliders.
+
+## Using Tune
+
+Type exact values into any box, or type four numbers or a CSS keyword into **Curve**. Paste
+a cubic-bezier anywhere on the Tune view to load it: a whole CSS line such as
+`transition: transform 300ms cubic-bezier(0.17, 0.89, 0.32, 1.1)` works, as does Compose's
+`CubicBezierEasing(...)`. Numbers that match a curve in the library open that curve.
+
 ## Running it
 
 ```sh

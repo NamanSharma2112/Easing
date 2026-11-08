@@ -6,6 +6,9 @@ import { forwardMotion, interruptMotion, traceOf } from './motion.js';
 const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const STORE_KEY = 'easing-lab-state-v2';
 const HOLD_MS = 700;
+const STEPS = 6;          // frames shown in stepped (reduced motion) playback
+const STEP_MS = 280;      // how long each of those frames holds
+const FULL_MESSAGE = 'Compare holds six curves. Remove one to add another.';
 const MAX_CARDS = 6;
 const GROUPS = ['All', ...new Set(LIBRARY.map((e) => e.group))];
 
@@ -22,6 +25,7 @@ const defaults = () => ({
   tune: { id: 'spring-bouncy' },
   codeTab: 'CSS',
   pickerGroup: 'All',
+  smooth: false,
 });
 
 function load() {
@@ -62,24 +66,68 @@ function setRange(input, value) {
   syncRange(input);
 }
 
+// A single choice: one Tab stop, arrow keys move the choice (the ARIA radio pattern).
 function renderFilters(container, items, active, onPick) {
   container.innerHTML = '';
-  for (const { value, label } of items) {
+  const options = items.map(({ value, label, name }) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `filter${value === active ? ' is-active' : ''}`;
+    button.className = 'filter';
+    button.setAttribute('role', 'radio');
     button.textContent = label;
-    button.setAttribute('aria-pressed', String(value === active));
-    button.addEventListener('click', () => {
-      $$('.filter', container).forEach((b) => {
-        const on = b === button;
-        b.classList.toggle('is-active', on);
-        b.setAttribute('aria-pressed', String(on));
-      });
-      onPick(value);
-    });
+    if (name) button.setAttribute('aria-label', name);
     container.append(button);
-  }
+    return { button, value };
+  });
+  const select = (index, focus = false) => {
+    options.forEach(({ button }, i) => {
+      const on = i === index;
+      button.classList.toggle('is-active', on);
+      button.setAttribute('aria-checked', String(on));
+      button.tabIndex = on ? 0 : -1;
+    });
+    if (focus) options[index].button.focus();
+  };
+  select(Math.max(0, options.findIndex((o) => o.value === active)));
+  options.forEach(({ button, value }, i) => {
+    button.addEventListener('click', () => { select(i); onPick(value); });
+    button.addEventListener('keydown', (event) => {
+      const next = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: options.length - 1 }[event.key];
+      if (next === undefined) return;
+      event.preventDefault();
+      const j = (next + options.length) % options.length;
+      select(j, true);
+      onPick(options[j].value);
+    });
+  });
+}
+
+// Arrow keys move between tabs and open them (the ARIA tabs pattern).
+function wireTabs(tabs) {
+  tabs.forEach((tab, i) => tab.addEventListener('keydown', (event) => {
+    const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    const target = tabs[(next + tabs.length) % tabs.length];
+    target.click();
+    target.focus();
+  }));
+}
+
+function markTabs(tabs, isOn) {
+  tabs.forEach((tab) => {
+    const on = isOn(tab);
+    tab.classList.toggle('is-active', on);
+    tab.setAttribute('aria-selected', String(on));
+    tab.tabIndex = on ? 0 : -1;
+  });
+}
+
+// Spoken feedback for changes that otherwise only show on screen.
+function announce(message) {
+  const region = $('#announcer');
+  region.textContent = '';
+  requestAnimationFrame(() => { region.textContent = message; });
 }
 
 /* ---------------------------------------------------------------- phones */
@@ -87,6 +135,7 @@ function renderFilters(container, items, active, onPick) {
 function makePhone(size = '') {
   const phone = document.createElement('div');
   phone.className = `phone ${size}`.trim();
+  phone.setAttribute('aria-hidden', 'true');
   phone.innerHTML = '<div class="phone-notch"></div><div class="screen"></div>';
   return phone;
 }
@@ -115,6 +164,8 @@ function buildGrid() {
   cards = state.cards.map((config, index) => {
     const article = document.createElement('article');
     article.className = 'card';
+    article.setAttribute('aria-labelledby', `card-${index}-name`);
+    article.setAttribute('aria-describedby', `card-${index}-about`);
 
     const box = document.createElement('div');
     box.className = 'card-box';
@@ -132,7 +183,7 @@ function buildGrid() {
 
     const label = document.createElement('div');
     label.className = 'card-label';
-    label.innerHTML = '<h3></h3><p></p>';
+    label.innerHTML = `<h3 id="card-${index}-name"></h3><p></p><p class="sr-only" id="card-${index}-about"></p>`;
 
     article.append(box, label);
     grid.append(article);
@@ -149,14 +200,19 @@ function buildGrid() {
       const act = tool.dataset.act;
       if (act === 'remove') removeCard(index);
       if (act === 'tune') { state.tune = { ...config }; setView('tune'); }
-      if (act === 'copy') copyText(snippets(card.resolved).CSS, () => flashDone(tool));
+      if (act === 'copy') {
+        copyText(snippets(card.resolved).CSS, () => {
+          flashDone(tool);
+          announce(`Copied the CSS for ${card.resolved.name}`);
+        });
+      }
     });
 
     return card;
   });
 
-  $('#add-easing').disabled = cards.length >= MAX_CARDS;
   refreshCards();
+  updateAddState();
 }
 
 function refreshCards() {
@@ -169,6 +225,12 @@ function refreshCards() {
     const r = card.resolved;
     $('h3', card.label).textContent = r.name;
     $('p', card.label).textContent = shortParams(r);
+    $('.sr-only', card.label).textContent = r.def?.blurb ?? '';
+    // Name the curve in each button, so three cards don't read as three identical "Remove"s.
+    for (const [act, text] of [['copy', `Copy the CSS for ${r.name}`], ['tune', `Open ${r.name} in Tune`], ['remove', `Remove ${r.name}`]]) {
+      const button = card.article.querySelector(`[data-act="${act}"]`);
+      if (button) { button.setAttribute('aria-label', text); button.title = text; }
+    }
     card.apply(REDUCED ? 1 : 0);
     card.plot.setProgress(REDUCED ? 1 : 0);
   });
@@ -176,17 +238,36 @@ function refreshCards() {
 }
 
 function addCard(config) {
-  if (state.cards.length >= MAX_CARDS) return;
+  if (state.cards.length >= MAX_CARDS) { announce(FULL_MESSAGE); return false; }
   state.cards = [...state.cards, config];
   buildGrid();
-  if (!REDUCED) cards.at(-1).article.classList.add('is-new');
+  const card = cards.at(-1);
+  if (!REDUCED) card.article.classList.add('is-new');
+  announce(`Added ${card.resolved.name}. ${cards.length} of ${MAX_CARDS} in Compare.`);
   playAll();
+  return true;
 }
 
 function removeCard(index) {
   if (state.cards.length <= 1) return;
+  const name = cards[index].resolved.name;
   state.cards = state.cards.filter((_, i) => i !== index);
   buildGrid();
+  announce(`Removed ${name}. ${cards.length} of ${MAX_CARDS} in Compare.`);
+  // Keep focus in the grid, on the card that took this one's place.
+  const next = cards[Math.min(index, cards.length - 1)].article;
+  (next.querySelector('[data-act="remove"]') || next.querySelector('[data-act="copy"]')).focus();
+}
+
+// The Add button stays usable when Compare is full, and says why instead of going dead.
+function updateAddState() {
+  const full = cards.length >= MAX_CARDS;
+  const inCompare = state.view === 'compare';
+  $('#picker-count').textContent = inCompare ? `${cards.length} of ${MAX_CARDS} in Compare` : '';
+  $('#picker-full').hidden = !(inCompare && full);
+  $('#tune-add').setAttribute('aria-disabled', String(full));
+  $('#tune-add').title = full ? FULL_MESSAGE : 'Add to Compare';
+  if (!$('#picker').hidden) renderPickerTiles();
 }
 
 function flashDone(button) {
@@ -249,6 +330,8 @@ function playAll({ auto = false, interruptAt = null } = {}) {
   });
   plotRun(running);
   if (REDUCED && auto) { showEnd(running); return; }
+  // Stepped playback can't land an interruption mid-step, so it plans the reversal up front.
+  if (stepped() && interruptAt !== null) { reverseAt(interruptAt); interruptAt = null; }
   pendingInterrupt = interruptAt;
   startTime = performance.now();
   rafId = requestAnimationFrame(frame);
@@ -262,20 +345,26 @@ function reverseAt(ms) {
   });
   plotRun(running, ms);
   $('#interrupt-note').hidden = false;
+  announce('Reversed halfway. Timing curves turn a sharp corner; springs keep their speed and turn smoothly.');
 }
+
+// Under reduced motion the page jumps between frames instead of moving, unless the
+// visitor chose smooth playback. The meaning (where each curve is at each moment) stays.
+const stepped = () => REDUCED && !state.smooth;
 
 // Mid-run, reverse right now; press again to send it back. From rest, play and
 // reverse automatically at the halfway point of the timing curves.
 function interrupt() {
   if (state.view !== 'compare') return;
-  if (!rafId) { playAll({ interruptAt: interruptPoint() }); return; }
+  if (!rafId || stepped()) { playAll({ interruptAt: interruptPoint() }); return; }
   pendingInterrupt = null;
   reverseAt((performance.now() - startTime) * state.speed);
 }
 
 function frame(now) {
   const elapsed = (now - startTime) * state.speed;
-  if (pendingInterrupt !== null && elapsed >= pendingInterrupt) {
+  const step = stepped() ? Math.min(STEPS, Math.floor((now - startTime) / STEP_MS)) : 0;
+  if (!stepped() && pendingInterrupt !== null && elapsed >= pendingInterrupt) {
     reverseAt(pendingInterrupt);
     pendingInterrupt = null;
   }
@@ -283,9 +372,10 @@ function frame(now) {
   let done = true;
   for (const card of running) {
     const { motion } = card;
-    card.apply(motion.pos(elapsed), (delay) => motion.pos(elapsed - delay));
-    card.plot.setProgress(elapsed / motion.totalMs);
-    if (elapsed < motion.totalMs + lag) done = false;
+    const t = stepped() ? (step / STEPS) * (motion.totalMs + lag) : elapsed;
+    card.apply(motion.pos(t), (delay) => motion.pos(t - delay));
+    card.plot.setProgress(t / motion.totalMs);
+    if (stepped() ? step < STEPS : elapsed < motion.totalMs + lag) done = false;
   }
   if (!done) { rafId = requestAnimationFrame(frame); return; }
   rafId = null;
@@ -313,27 +403,39 @@ function buildPicker() {
 function renderPickerTiles() {
   const grid = $('#picker-grid');
   grid.innerHTML = '';
+  const compare = state.view === 'compare';
+  const full = compare && state.cards.length >= MAX_CARDS;
+  // Library curves already in Compare, untouched; an edited copy counts as a different curve.
+  const added = new Set(state.cards
+    .filter((c) => !c.custom && !c.bezier && c.duration === undefined && c.bounce === undefined && c.durationMs === undefined)
+    .map((c) => c.id));
   const entries = LIBRARY.filter((e) => state.pickerGroup === 'All' || e.group === state.pickerGroup);
   for (const entry of entries) {
+    const isAdded = compare && added.has(entry.id);
+    const blocked = isAdded || full;
     const tile = document.createElement('button');
     tile.type = 'button';
-    tile.className = 'tile';
+    tile.className = `tile${isAdded ? ' is-added' : ''}${full && !isAdded ? ' is-blocked' : ''}`;
     tile.title = `${entry.blurb} ${entry.use}`;
+    tile.setAttribute('aria-label', `${entry.name}${isAdded ? ', already in Compare' : ''}. ${entry.blurb}`);
+    if (blocked) tile.setAttribute('aria-disabled', 'true');
     const box = document.createElement('span');
     box.className = 'tile-box';
     box.append(miniCurve(resolve({ id: entry.id, durationMs: 300 }).fn));
     const name = document.createElement('span');
     name.className = 'tile-name';
-    name.textContent = entry.name;
+    name.textContent = isAdded ? `${entry.name} · added` : entry.name;
     tile.append(box, name);
     tile.addEventListener('click', () => {
-      closePicker();
-      if (state.view === 'tune') {
+      if (blocked) { announce(isAdded ? `${entry.name} is already in Compare.` : FULL_MESSAGE); return; }
+      closePicker({ returnFocus: true });
+      if (compare) {
+        addCard({ id: entry.id });
+      } else {
         state.tune = { id: entry.id };
         refreshTune();
+        announce(`Tuning ${entry.name}`);
         playAll();
-      } else {
-        addCard({ id: entry.id });
       }
     });
     grid.append(tile);
@@ -342,14 +444,16 @@ function renderPickerTiles() {
 
 function openPicker() {
   $('#picker').hidden = false;
+  updateAddState();
   $('#add-easing').setAttribute('aria-expanded', 'true');
-  $('#picker .filter.is-active')?.focus();
+  $('#picker [role="radio"][aria-checked="true"]')?.focus();
 }
 
-function closePicker() {
+function closePicker({ returnFocus = false } = {}) {
   if ($('#picker').hidden) return;
   $('#picker').hidden = true;
   $('#add-easing').setAttribute('aria-expanded', 'false');
+  if (returnFocus) $('#add-easing').focus();
 }
 
 /* ------------------------------------------------------------------ tune */
@@ -416,23 +520,27 @@ function refreshTune({ rebuildDemo = false } = {}) {
 
   if (isSpring) {
     setRange($('#tune-duration'), r.duration);
-    $('#tune-duration-out').textContent = r.duration.toFixed(2);
+    $('#tune-duration-out').value = r.duration.toFixed(2);
+    $('#tune-duration').setAttribute('aria-valuetext', `${r.duration.toFixed(2)} seconds`);
     setRange($('#tune-bounce'), r.bounce);
-    $('#tune-bounce-out').textContent = r.bounce.toFixed(2);
+    $('#tune-bounce-out').value = r.bounce.toFixed(2);
   } else {
     ['x1', 'y1', 'x2', 'y2'].forEach((key, i) => {
       setRange($(`#p-${key}`), r.bezier[i]);
-      $(`#o-${key}`).textContent = r.bezier[i].toFixed(2);
+      $(`#o-${key}`).value = String(round(r.bezier[i], 3));
     });
     setRange($('#tune-ms'), Math.round(r.totalMs));
-    $('#tune-ms-out').textContent = Math.round(r.totalMs);
+    $('#tune-ms-out').value = Math.round(r.totalMs);
+    $('#tune-ms').setAttribute('aria-valuetext', `${Math.round(r.totalMs)} milliseconds`);
+    // Don't rewrite the text while someone is typing in it.
+    if (document.activeElement !== $('#bezier-text')) $('#bezier-text').value = r.bezier.map((n) => round(n, 3)).join(', ');
   }
 
   const edited = (config.bezier && base?.bezier && config.bezier.join() !== base.bezier.join())
     || (config.duration !== undefined && config.duration !== base?.duration)
     || (config.bounce !== undefined && config.bounce !== base?.bounce);
 
-  $('#tune-name').textContent = base ? base.name : 'Custom';
+  $('#tune-name').textContent = base ? base.name : 'Custom curve';
   $('#tune-edited').hidden = !edited;
   $('#tune-params').textContent = isSpring
     ? `${r.duration.toFixed(2)}s, bounce ${r.bounce.toFixed(2)}`
@@ -492,7 +600,8 @@ function setHandle(node, x, y) {
   node.setAttribute('cy', ey(y));
   node.dataset.x = x;
   node.dataset.y = y;
-  node.setAttribute('aria-valuetext', `${round(x, 2)}, ${round(y, 2)}`);
+  const which = node.id === 'handle-1' ? 'First' : 'Second';
+  node.setAttribute('aria-label', `${which} control point, x ${round(x, 2)}, y ${round(y, 2)}`);
 }
 
 function currentBezier() {
@@ -559,11 +668,8 @@ function highlight(code) {
 
 function renderCode(r) {
   const code = snippets(r);
-  $$('#code-tabs .code-tab').forEach((tab) => {
-    const on = tab.dataset.tab === state.codeTab;
-    tab.classList.toggle('is-active', on);
-    tab.setAttribute('aria-selected', String(on));
-  });
+  markTabs($$('#code-tabs .code-tab'), (tab) => tab.dataset.tab === state.codeTab);
+  $('#code-panel').setAttribute('aria-labelledby', `code-tab-${state.codeTab}`);
   $('#code-out').innerHTML = highlight(code[state.codeTab] ?? code.CSS);
 }
 
@@ -575,13 +681,9 @@ function setView(view) {
   state.view = view;
   $('#view-compare').hidden = view !== 'compare';
   $('#view-tune').hidden = view !== 'tune';
-  $$('.tabs .tab').forEach((tab) => {
-    const on = tab.dataset.view === view;
-    tab.classList.toggle('is-active', on);
-    tab.setAttribute('aria-selected', String(on));
-  });
+  markTabs($$('.tabs .tab'), (tab) => tab.dataset.view === view);
   $('#add-easing').firstChild.textContent = view === 'tune' ? 'Change easing' : 'Add easing';
-  $('#add-easing').disabled = view === 'compare' && cards.length >= MAX_CARDS;
+  updateAddState();
   if (view === 'tune') refreshTune({ rebuildDemo: true });
   save();
   playAll();
@@ -615,7 +717,8 @@ function initControls() {
     playAll();
   });
 
-  renderFilters($('#speed-chips'), [1, 0.5, 0.25].map((s) => ({ value: s, label: `${s}×` })), state.speed, (speed) => {
+  const speedNames = { 1: 'Full speed', 0.5: 'Half speed', 0.25: 'Quarter speed' };
+  renderFilters($('#speed-chips'), [1, 0.5, 0.25].map((s) => ({ value: s, label: `${s}×`, name: speedNames[s] })), state.speed, (speed) => {
     state.speed = speed;
     save();
     playAll();
@@ -624,10 +727,12 @@ function initControls() {
   const duration = $('#duration');
   setRange(duration, state.durationMs);
   $('#duration-out').textContent = `${state.durationMs}ms`;
+  duration.setAttribute('aria-valuetext', `${state.durationMs} milliseconds`);
   duration.addEventListener('input', () => {
     syncRange(duration);
     state.durationMs = Number(duration.value);
     $('#duration-out').textContent = `${state.durationMs}ms`;
+    duration.setAttribute('aria-valuetext', `${state.durationMs} milliseconds`);
     stopClock();
     refreshCards();
     showEnd(cards);
@@ -637,6 +742,7 @@ function initControls() {
   const loop = $('#loop');
   loop.setAttribute('aria-pressed', String(state.loop && !REDUCED));
   loop.disabled = REDUCED;
+  if (REDUCED) loop.title = 'Looping is off while your system asks for reduced motion';
   loop.addEventListener('click', () => {
     state.loop = !state.loop;
     loop.setAttribute('aria-pressed', String(state.loop));
@@ -648,6 +754,7 @@ function initControls() {
   $('#interrupt').addEventListener('click', interrupt);
   $('#tune-replay').addEventListener('click', () => playAll());
   $$('.tabs .tab').forEach((tab) => tab.addEventListener('click', () => setView(tab.dataset.view)));
+  wireTabs($$('.tabs .tab'));
 
   const addButton = $('#add-easing');
   addButton.addEventListener('click', (event) => {
@@ -655,7 +762,11 @@ function initControls() {
     if ($('#picker').hidden) openPicker(); else closePicker();
   });
   $('#picker').addEventListener('click', (event) => event.stopPropagation());
-  document.addEventListener('click', closePicker);
+  document.addEventListener('click', () => closePicker());
+  // Tabbing out of the dropdown closes it, as a disclosure should.
+  $('.bar-end').addEventListener('focusout', (event) => {
+    if (event.relatedTarget && !$('.bar-end').contains(event.relatedTarget)) closePicker();
+  });
 
   for (const [key, index, axis] of [['x1', 0, 0], ['y1', 0, 1], ['x2', 1, 0], ['y2', 1, 1]]) {
     $(`#p-${key}`).addEventListener('input', (event) => {
@@ -676,17 +787,59 @@ function initControls() {
     state.tune = { ...state.tune, bounce: Number(event.target.value) };
     refreshTune();
   });
+  // Typed values apply on Enter or when the field loses focus; anything unusable reverts.
+  const commit = (input, apply) => input.addEventListener('change', () => {
+    const value = Number(input.value);
+    if (input.value.trim() === '' || !Number.isFinite(value)) { refreshTune(); return; }
+    apply(clamp(value, Number(input.min), Number(input.max)));
+    playAll();
+  });
+  for (const [key, index, axis] of [['x1', 0, 0], ['y1', 0, 1], ['x2', 1, 0], ['y2', 1, 1]]) {
+    commit($(`#o-${key}`), (value) => {
+      const current = currentBezier();
+      setBezier(index, axis === 0 ? value : current[index * 2], axis === 1 ? value : current[index * 2 + 1]);
+    });
+  }
+  commit($('#tune-ms-out'), (value) => { state.tune = { ...state.tune, durationMs: Math.round(value) }; refreshTune(); });
+  commit($('#tune-duration-out'), (value) => { state.tune = { ...state.tune, duration: value }; refreshTune(); });
+  commit($('#tune-bounce-out'), (value) => { state.tune = { ...state.tune, bounce: value }; refreshTune(); });
+
+  const bezierText = $('#bezier-text');
+  const help = $('#bezier-help');
+  const helpText = help.textContent;
+  help.dataset.text = helpText;
+  bezierText.addEventListener('change', () => {
+    const values = parseBezier(bezierText.value);
+    bezierText.setAttribute('aria-invalid', String(!values));
+    help.textContent = values ? helpText : 'That isn’t a cubic-bezier. It needs four numbers, and x1 and x2 must be between 0 and 1.';
+    help.classList.toggle('is-error', !values);
+    if (!values) return;
+    loadBezier(values);
+    // Show what was understood, e.g. ease-out as its four numbers.
+    bezierText.value = values.map((n) => round(n, 3)).join(', ');
+  });
+  document.addEventListener('paste', (event) => {
+    if (state.view !== 'tune' || event.target.matches('input, textarea')) return;
+    const values = parseBezier(event.clipboardData?.getData('text') ?? '');
+    if (!values) return;
+    event.preventDefault();
+    loadBezier(values);
+  });
+
   $$('#tune-panel input[type="range"]').forEach((input) => {
     input.addEventListener('pointerdown', stopClock);
     input.addEventListener('change', () => playAll());
   });
 
   $('#tune-reset').addEventListener('click', () => {
+    if (state.tune.custom) { announce('A pasted curve has no original to go back to.'); return; }
     state.tune = { id: state.tune.id };
     refreshTune();
+    announce(`Reset ${byId(state.tune.id)?.name ?? 'the curve'}`);
     playAll();
   });
   $('#tune-add').addEventListener('click', () => {
+    if (cards.length >= MAX_CARDS) { announce(FULL_MESSAGE); return; }
     const config = { ...state.tune };
     setView('compare');
     addCard(config);
@@ -697,20 +850,102 @@ function initControls() {
     renderCode(tuneCard.resolved);
     save();
   }));
+  wireTabs($$('#code-tabs .code-tab'));
   $('#copy-code').addEventListener('click', (event) => {
     const button = event.currentTarget;
     copyText($('#code-out').textContent, () => {
+      announce(`Copied the ${state.codeTab} code`);
       button.textContent = 'Copied';
       setTimeout(() => { button.textContent = 'Copy'; }, 1200);
     });
   });
 
+  const smooth = $('#smooth');
+  const paintSmooth = () => {
+    smooth.setAttribute('aria-pressed', String(state.smooth));
+    $('#reduced-text').textContent = state.smooth
+      ? 'Reduced motion is on. You chose smooth playback; nothing plays by itself.'
+      : 'Reduced motion is on, so playback steps through frames instead of moving, and nothing plays by itself.';
+  };
+  smooth.addEventListener('click', () => { state.smooth = !state.smooth; paintSmooth(); save(); });
+  paintSmooth();
+
+  // Two presses, so a stray click can't wipe someone's cards.
+  const restore = $('#restore');
+  let armed = 0;
+  const disarm = () => { clearTimeout(armed); armed = 0; restore.textContent = 'Restore default cards'; };
+  restore.addEventListener('click', () => {
+    if (!armed) {
+      restore.textContent = 'Press again to restore';
+      announce('Press again to replace your cards with the defaults.');
+      armed = setTimeout(disarm, 4000);
+      return;
+    }
+    disarm();
+    state.cards = defaults().cards;
+    if (state.view !== 'compare') setView('compare');
+    buildGrid();
+    announce('Restored the default cards: Ease out, Smooth spring and Bouncy spring.');
+    playAll();
+  });
+
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') { closePicker(); return; }
-    if (event.key !== ' ' || event.target.matches('input, select, textarea, button, [tabindex]')) return;
+    if (event.key === 'Escape') { closePicker({ returnFocus: !$('#picker').hidden }); return; }
+    if (event.key !== ' ' || event.altKey || event.ctrlKey || event.metaKey) return;
+    // Space replays from anywhere that doesn't already use it.
+    if (event.target.closest('input, select, textarea, button, a, pre, [role="radio"], [role="tab"], [role="button"]')) return;
     event.preventDefault();
     playAll();
   });
+}
+
+// Accepts a whole CSS line such as `transition: transform 300ms cubic-bezier(0.17, 0.89,
+// 0.32, 1.1)`, Compose's CubicBezierEasing(0.17f, ...), an array, or just four numbers.
+// When the text names the curve, only the numbers inside its brackets count, so the
+// 300 in 300ms is never mistaken for x1.
+const CSS_KEYWORDS = {
+  linear: [0, 0, 1, 1],
+  ease: [0.25, 0.1, 0.25, 1],
+  'ease-in': [0.42, 0, 1, 1],
+  'ease-out': [0, 0, 0.58, 1],
+  'ease-in-out': [0.42, 0, 0.58, 1],
+};
+
+function parseBezier(text) {
+  const keyword = CSS_KEYWORDS[text.trim().replace(/;$/, '').toLowerCase()];
+  if (keyword) return [...keyword];
+  const named = text.match(/cubic-?bezier(?:easing)?\s*\(([^)]*)\)/i);
+  const numbers = ((named ? named[1] : text).match(/-?\d*\.?\d+/g) || []).map(Number);
+  if (numbers.length !== 4) return null;
+  const values = numbers;
+  if (values.some((n) => !Number.isFinite(n))) return null;
+  if (values[0] < 0 || values[0] > 1 || values[2] < 0 || values[2] > 1) return null;
+  return values.map((n) => clamp(n, EDITOR.yMin, EDITOR.yMax));
+}
+
+// Edits a library timing curve in place; anything else becomes a custom curve.
+function loadBezier(values) {
+  const help = $('#bezier-help');
+  help.classList.remove('is-error');
+  help.textContent = help.dataset.text ?? help.textContent;
+  $('#bezier-text').setAttribute('aria-invalid', 'false');
+  const current = tuneCard.resolved;
+  const ms = current.type === 'bezier' ? Math.round(current.totalMs) : state.durationMs;
+  const key = (v) => v.map((n) => round(n, 3)).join();
+  const known = LIBRARY.find((e) => e.type === 'bezier' && key(e.bezier) === key(values));
+  if (known) {
+    state.tune = { id: known.id, durationMs: ms };
+  } else if (current.type === 'bezier' && !state.tune.custom) {
+    state.tune = { ...state.tune, bezier: values };
+  } else {
+    state.tune = {
+      id: 'custom', custom: true, type: 'bezier', name: 'Custom curve', blurb: '', use: '',
+      bezier: values, durationMs: ms,
+    };
+  }
+  refreshTune();
+  announce(known ? `Loaded ${known.name}` : `Loaded cubic-bezier(${values.join(', ')})`);
+  playAll();
 }
 
 function init() {
