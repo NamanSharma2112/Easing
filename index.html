@@ -21,6 +21,8 @@
   <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.25v9.5M3.25 8h9.5" /></symbol>
   <symbol id="i-reset" viewBox="0 0 16 16"><path d="M2.75 8a5.25 5.25 0 1 0 1.54-3.71" /><path d="M2.75 2.75v2.5h2.5" /></symbol>
   <symbol id="i-chevron" viewBox="0 0 16 16"><path d="M4.5 6.5 8 10l3.5-3.5" /></symbol>
+  <symbol id="i-play" viewBox="0 0 16 16"><path d="M5.25 3.75v8.5L12 8z" /></symbol>
+  <symbol id="i-pause" viewBox="0 0 16 16"><path d="M5.75 4v8M10.25 4v8" /></symbol>
 </svg>
 
 <div class="page">
@@ -70,9 +72,12 @@
         <div class="scrub-row">
           <div class="filters" id="direction" role="radiogroup" aria-label="Direction"></div>
           <div class="slider-row is-scrub">
+            <button type="button" id="scrub-play" class="icon-btn scrub-play" aria-label="Play from here">
+              <svg aria-hidden="true"><use href="#i-play" /></svg>
+            </button>
             <label for="scrub">Timeline</label>
-            <input type="range" id="scrub" min="0" max="300" step="1" value="0" aria-describedby="scrub-hint" />
-            <output id="scrub-out" for="scrub">0ms</output>
+            <input type="range" id="scrub" class="scrubber" min="0" max="300" step="1" value="0" aria-describedby="scrub-hint" />
+            <output id="scrub-out" for="scrub">0 / 0 ms</output>
           </div>
         </div>
         <div class="playback">
@@ -90,13 +95,13 @@
         </div>
       </div>
       <div class="hint-row">
-        <p class="playback-hint" id="playback-hint">Duration sets the timing curves; springs keep their own. Press Space to replay, or click any card.</p>
+        <p class="playback-hint" id="playback-hint">Duration sets every card. A spring looks finished at that duration and settles just after, which the timeline includes. Press Space to replay, or click any card.</p>
         <div class="hint-actions">
           <button type="button" id="speed-toggle" class="text-btn" aria-pressed="false">Speed graph</button>
           <button type="button" id="share" class="text-btn" hidden>Copy link</button>
         </div>
       </div>
-      <p class="sr-only" id="scrub-hint">Drag to step every card through the animation frame by frame.</p>
+      <p class="sr-only" id="scrub-hint">Drag to step every card through the animation frame by frame. The play button continues from the point you choose.</p>
       <p class="sr-only" id="interrupt-hint">Plays the cards and reverses them halfway. Press it again during a run to send them back.</p>
 
       <p id="interrupt-note" class="interrupt-note" hidden>

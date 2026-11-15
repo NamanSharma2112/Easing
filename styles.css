@@ -423,8 +423,26 @@ main:focus { outline: none; }
 }
 .playback-stack .playback { margin-top: 0; padding-top: 0; border-top: 0; }
 .scrub-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px 24px; }
-.slider-row.is-scrub { grid-template-columns: auto minmax(0, 1fr) 58px; gap: 12px; }
-.slider-row.is-scrub output { font-size: 12.5px; }
+.slider-row.is-scrub { grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 12px; }
+/* The timeline is a playhead, not a setting: a thin media-style track and a
+   position-of-total readout, so it can't be mistaken for the Duration control. */
+.slider-row.is-scrub output {
+  min-width: 92px; height: auto; border: 0; place-items: center end;
+  font-size: 12.5px; font-weight: 400; color: var(--fg-2);
+}
+.scrub-play { width: 28px; height: 28px; }
+.scrub-play svg { width: 14px; height: 14px; }
+input[type="range"].scrubber { height: 20px; }
+input[type="range"].scrubber::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 99px;
+  background: linear-gradient(to right, var(--accent) calc(var(--f) * 100%), var(--track) calc(var(--f) * 100%));
+}
+input[type="range"].scrubber::-webkit-slider-thumb {
+  width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--fg);
+}
+input[type="range"].scrubber::-moz-range-track { height: 4px; border-radius: 99px; background: var(--track); }
+input[type="range"].scrubber::-moz-range-progress { height: 4px; border-radius: 99px; background: var(--accent); }
+input[type="range"].scrubber::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: var(--fg); }
 .slider-row.is-inline { grid-template-columns: auto 180px 58px; gap: 12px; }
 .slider-row.is-inline output { font-size: 12.5px; }
 .playback-end { display: flex; align-items: center; gap: 24px; }

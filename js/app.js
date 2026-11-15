@@ -149,7 +149,16 @@ function shortParams(r) {
 
 /* --------------------------------------------------------------- compare */
 
+// Duration drives every card in Compare. Timing curves take it directly. Springs
+// scale with it: a standard 0.5s preset runs at exactly the Duration, and faster or
+// slower presets keep their proportion to it. A duration set by hand in Tune wins.
+const SPRING_REFERENCE_S = 0.5;
 function resolveCard(config) {
+  const base = config.custom ? config : byId(config.id);
+  if (base?.type === 'spring' && config.duration === undefined) {
+    const duration = base.duration * (state.durationMs / 1000 / SPRING_REFERENCE_S);
+    return resolve({ ...config, duration });
+  }
   return resolve({ ...config, durationMs: config.durationMs ?? state.durationMs });
 }
 
@@ -201,7 +210,13 @@ function buildGrid() {
       if (!tool) { playAll(); return; }
       const act = tool.dataset.act;
       if (act === 'remove') removeCard(index);
-      if (act === 'tune') { state.tune = { ...config }; setView('tune'); }
+      if (act === 'tune') {
+        const r = card.resolved;
+        state.tune = r.type === 'spring'
+          ? { ...config, duration: round(r.duration, 2) }
+          : { ...config, durationMs: Math.round(r.totalMs) };
+        setView('tune');
+      }
       if (act === 'copy') {
         copyText(snippets(card.resolved).CSS, () => {
           flashDone(tool);
@@ -293,6 +308,31 @@ function stopClock() {
   rafId = null;
   holdId = null;
   pendingInterrupt = null;
+  paintPlay();
+}
+
+// The timeline's button reads Pause while Compare is playing, Play otherwise.
+function paintPlay() {
+  const button = document.getElementById('scrub-play');
+  if (!button) return;
+  const playing = rafId !== null && running === cards;
+  button.setAttribute('aria-label', playing ? 'Pause' : 'Play from here');
+  button.title = playing ? 'Pause' : 'Play from here';
+  button.querySelector('use').setAttribute('href', playing ? '#i-pause' : '#i-play');
+}
+
+// Continue from a point on the timeline, keeping each card's current motion
+// (an interruption included). From the end it starts over.
+function resume(fromMs) {
+  if (state.view !== 'compare') return;
+  const total = runLength();
+  if (fromMs >= total - 1) { playAll(); return; }
+  stopClock();
+  running = cards;
+  const offset = stepped() ? (fromMs / total) * STEPS * STEP_MS : fromMs / state.speed;
+  startTime = performance.now() - offset;
+  rafId = requestAnimationFrame(frame);
+  paintPlay();
 }
 
 function activeCards() {
@@ -327,7 +367,7 @@ function syncScrub(ms) {
   const at = Math.round(clamp(ms, 0, total));
   scrub.max = total;
   setRange(scrub, at);
-  $('#scrub-out').textContent = `${at}ms`;
+  $('#scrub-out').textContent = `${at} / ${total} ms`;
   scrub.setAttribute('aria-valuetext', `${at} of ${total} milliseconds`);
 }
 
@@ -374,6 +414,7 @@ function playAll({ auto = false, interruptAt = null } = {}) {
   pendingInterrupt = interruptAt;
   startTime = performance.now();
   rafId = requestAnimationFrame(frame);
+  paintPlay();
 }
 
 function reverseAt(ms) {
@@ -419,6 +460,7 @@ function frame(now) {
   if (running === cards) syncScrub(stepped() ? (step / STEPS) * runLength() : elapsed);
   if (!done) { rafId = requestAnimationFrame(frame); return; }
   rafId = null;
+  paintPlay();
   if (state.loop && !REDUCED) {
     const again = lastRun === 'interrupt' ? interruptPoint() : null;
     holdId = setTimeout(() => {
@@ -577,8 +619,8 @@ function refreshTune({ rebuildDemo = false } = {}) {
     if (document.activeElement !== $('#bezier-text')) $('#bezier-text').value = r.bezier.map((n) => round(n, 3)).join(', ');
   }
 
+  // "Edited" means the shape changed; a different duration is the same curve.
   const edited = (config.bezier && base?.bezier && config.bezier.join() !== base.bezier.join())
-    || (config.duration !== undefined && config.duration !== base?.duration)
     || (config.bounce !== undefined && config.bounce !== base?.bounce);
 
   $('#tune-name').textContent = base ? base.name : 'Custom curve';
@@ -774,6 +816,10 @@ function initControls() {
 
   const scrub = $('#scrub');
   scrub.addEventListener('input', () => seek(Number(scrub.value)));
+  $('#scrub-play').addEventListener('click', () => {
+    if (rafId !== null && running === cards) stopClock();
+    else resume(Number(scrub.value));
+  });
 
   const speedToggle = $('#speed-toggle');
   speedToggle.setAttribute('aria-pressed', String(state.showSpeed));
@@ -983,7 +1029,7 @@ function initControls() {
 // When the text names the curve, only the numbers inside its brackets count, so the
 // 300 in 300ms is never mistaken for x1.
 function paintHint() {
-  const parts = ['Duration sets the timing curves; springs keep their own. Press Space to replay, or click any card.'];
+  const parts = ['Duration sets every card. A spring looks finished at that duration and settles just after, which the timeline includes. Press Space to replay, or click any card.'];
   if (state.direction === 'exit') parts.push('Exits usually want about two-thirds of the entrance duration.');
   if (state.showSpeed) parts.push('The grey line is speed.');
   $('#playback-hint').textContent = parts.join(' ');

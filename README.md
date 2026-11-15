@@ -17,8 +17,11 @@ see it move a real bottom sheet.
   Press Interrupt again mid-run to send it back.
 - **Enter or Exit.** Play the dismissal as well as the entrance. An exit is the entrance
   mirrored, and Interrupt works in both directions.
+- **Duration sets every card.** Timing curves take it directly; springs scale with it, so a
+  standard 0.5s preset runs at exactly the Duration and faster or slower presets keep their
+  proportion. A duration set by hand in Tune stays fixed.
 - **Scrub the timeline** to hold every card on the same millisecond and step through it,
-  by drag or with the arrow keys.
+  by drag or with the arrow keys; its play button continues from that point.
 - **Speed graph** adds a second line to each graph showing how fast the element is
   moving. Ease out starts at full speed; an interrupted timing curve's speed jumps, while a
   spring's dips smoothly through zero as it turns.
