@@ -44,10 +44,11 @@ export function createPlot({ width = 260, height = 96, inset = 8 } = {}) {
   const base = el('line', { class: 'plot-base', x1: inset, x2: width - inset });
   const ghost = el('path', { class: 'plot-ghost', d: '', fill: 'none' });
   const marker = el('line', { class: 'plot-marker', x1: 0, x2: 0, y1: 0, y2: height, visibility: 'hidden' });
+  const speed = el('path', { class: 'plot-speed', d: '', fill: 'none' });
   const full = el('path', { class: 'plot-line', d: '', fill: 'none' });
   const traced = el('path', { class: 'plot-traced', d: '', fill: 'none' });
   const head = el('circle', { class: 'plot-head', r: 3.5, cx: inset, cy: height - inset });
-  svg.append(base, target, marker, ghost, full, traced, head);
+  svg.append(base, target, marker, ghost, speed, full, traced, head);
 
   let points = [];
   let range = [0, 1];
@@ -89,7 +90,17 @@ export function createPlot({ width = 260, height = 96, inset = 8 } = {}) {
     marker.setAttribute('visibility', 'visible');
   }
 
-  return { svg, setCurve, setProgress, setMarker };
+  // An optional speed line. It is drawn between the 0 and 1 rules, scaled so the
+  // fastest moment of any card (top) just reaches the upper rule. Null clears it.
+  function setSpeed(speedPoints, top = 1) {
+    if (!speedPoints) { speed.setAttribute('d', ''); return; }
+    const span = y(0) - y(1);
+    speed.setAttribute('d', speedPoints
+      .map(([t, s], i) => `${i ? 'L' : 'M'}${x(t).toFixed(2)} ${(y(0) - (s / top) * span).toFixed(2)}`)
+      .join(' '));
+  }
+
+  return { svg, setCurve, setProgress, setMarker, setSpeed };
 }
 
 // Square thumbnail used in the picker, drawn like a tile on easing.dev.

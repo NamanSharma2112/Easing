@@ -3,9 +3,12 @@
 // motion; an interruption joins a second motion onto the first.
 import { clamp, springMotion, springSettleTime } from './easings.js';
 
-export function forwardMotion(r) {
+// 'enter' runs from 0 to 1 and 'exit' from 1 to 0. An exit is the entrance
+// mirrored, for timing curves and springs alike.
+export function forwardMotion(r, direction = 'enter') {
   const total = r.totalMs;
-  return { totalMs: total, pos: (ms) => r.fn(clamp(ms / total, 0, 1)) };
+  const enter = (ms) => r.fn(clamp(ms / total, 0, 1));
+  return { totalMs: total, pos: direction === 'exit' ? (ms) => 1 - enter(ms) : enter };
 }
 
 // Central difference, in progress units per second.
@@ -41,6 +44,21 @@ export function interruptMotion(motion, r, atMs, to) {
     totalMs: atMs + nextTotal,
     pos: (ms) => (ms < atMs ? motion.pos(ms) : next(ms - atMs)),
   };
+}
+
+// Speed (the size of the velocity, in progress per second) over the whole run.
+// It makes "ease-out starts fast" visible, and shows an interruption as a jump
+// for timing curves and a smooth dip for springs.
+export function speedTrace(motion, count = 240) {
+  const points = [];
+  for (let i = 0; i <= count; i++) {
+    const t = i / count;
+    const ms = t * motion.totalMs;
+    const a = Math.max(0, ms - 0.5);
+    const b = ms + 0.5;
+    points.push([t, Math.abs((motion.pos(b) - motion.pos(a)) / (b - a)) * 1000]);
+  }
+  return points;
 }
 
 // Position over the whole run, normalised to [0, 1] on the time axis for plotting.

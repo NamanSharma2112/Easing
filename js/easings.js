@@ -104,8 +104,8 @@ const bez = (name, group, v, blurb, use) => ({
   name, group, type: 'bezier', bezier: v, blurb, use,
 });
 
-const spr = (id, name, duration, bounce, blurb, use) => ({
-  id, name, group: 'Springs', type: 'spring', duration, bounce, blurb, use,
+const spr = (id, name, duration, bounce, blurb, use, group = 'Springs') => ({
+  id, name, group, type: 'spring', duration, bounce, blurb, use,
 });
 
 export const LIBRARY = [
@@ -163,15 +163,24 @@ export const LIBRARY = [
   bez('Material accelerate', 'System', [0.3, 0, 0.8, 0.15],
     'Material 3 emphasized accelerate.',
     'Elements leaving the screen on Android.'),
+  bez('iOS sheet', 'System', [0.32, 0.72, 0, 1],
+    'The curve Vaul uses to mimic the iOS sheet. It leaves at full speed and spends most of its time settling.',
+    'Sheets and drawers attached to a screen edge. Vaul runs it for 500ms.'),
+  spr('spring-swiftui-snappy', 'SwiftUI snappy', 0.5, 0.15,
+    'SwiftUI\'s .snappy preset: half a second with a small bounce.',
+    'A lively default for interface motion on Apple platforms.', 'System'),
+  spr('spring-motion-default', 'Motion default', 0.63, 0.5,
+    'The spring Motion uses when you set no options (stiffness 100, damping 10), as duration and bounce.',
+    'Worth seeing before you rely on it: it is bouncier than most product UI wants.', 'System'),
 
   spr('spring-smooth', 'Smooth spring', 0.5, 0,
-    'Critically damped. Reaches the target as fast as possible without passing it.',
+    'Critically damped. Reaches the target as fast as possible without passing it. The same spring as SwiftUI\'s .smooth.',
     'The default for interface motion. Looks like ease out but keeps velocity if interrupted.'),
   spr('spring-subtle', 'Subtle spring', 0.4, 0.15,
     'A hint of overshoot you feel more than see.',
     'Buttons, toggles, small state changes.'),
   spr('spring-bouncy', 'Bouncy spring', 0.5, 0.3,
-    'Clear overshoot and one visible settle.',
+    'Clear overshoot and one visible settle. The same spring as SwiftUI\'s .bouncy.',
     'Sheets, popovers and anything that should feel physical.'),
   spr('spring-snappy', 'Snappy spring', 0.3, 0.15,
     'Short duration with a light bounce.',

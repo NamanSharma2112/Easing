@@ -15,12 +15,23 @@ see it move a real bottom sheet.
   restarts its curve, so its graph turns a sharp corner; a spring carries its speed into the
   new direction and turns smoothly. That difference is the real reason to use springs.
   Press Interrupt again mid-run to send it back.
+- **Enter or Exit.** Play the dismissal as well as the entrance. An exit is the entrance
+  mirrored, and Interrupt works in both directions.
+- **Scrub the timeline** to hold every card on the same millisecond and step through it,
+  by drag or with the arrow keys.
+- **Speed graph** adds a second line to each graph showing how fast the element is
+  moving. Ease out starts at full speed; an interrupted timing curve's speed jumps, while a
+  spring's dips smoothly through zero as it turns.
+- **Copy link** saves the comparison (cards, any edits, interaction, duration, direction)
+  in a URL. Everything read back from a link is validated, so a damaged or hand-edited link
+  falls back to defaults instead of breaking the page.
 - **Slow it down** to 0.5x or 0.25x. Most curves look identical at full speed over short
   distances; at a quarter speed they do not.
 - **Tune** a curve by dragging the bezier handles or the x1/y1/x2/y2 sliders, or by setting a spring's duration and
   bounce, and copy the result as CSS, Motion, SwiftUI, UIKit, Jetpack Compose or Tailwind.
-- 36 curves in the library: the CSS standards, the full power set (sine through circ),
-  the back/anticipation curves, Material 3's system curves and seven springs.
+- 39 curves in the library: the CSS standards, the full power set (sine through circ),
+  the back/anticipation curves, seven springs, and system curves from real products:
+  Material 3, the iOS sheet curve Vaul uses, SwiftUI's `.snappy` and Motion's default spring.
 
 ## Accessibility
 

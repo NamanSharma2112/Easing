@@ -417,6 +417,14 @@ main:focus { outline: none; }
   display: flex; align-items: center; justify-content: space-between; gap: 16px 32px; flex-wrap: wrap;
   margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border);
 }
+.playback-stack {
+  display: flex; flex-direction: column; gap: 14px;
+  margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border);
+}
+.playback-stack .playback { margin-top: 0; padding-top: 0; border-top: 0; }
+.scrub-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px 24px; }
+.slider-row.is-scrub { grid-template-columns: auto minmax(0, 1fr) 58px; gap: 12px; }
+.slider-row.is-scrub output { font-size: 12.5px; }
 .slider-row.is-inline { grid-template-columns: auto 180px 58px; gap: 12px; }
 .slider-row.is-inline output { font-size: 12.5px; }
 .playback-end { display: flex; align-items: center; gap: 24px; }
@@ -517,6 +525,7 @@ main:focus { outline: none; }
   .tune-body { grid-template-columns: 1fr; }
   .editor { width: 100%; }
   .playback { flex-direction: column; align-items: stretch; }
+  .scrub-row { grid-template-columns: 1fr; }
   .slider-row.is-inline { grid-template-columns: auto minmax(0, 1fr) 58px; }
   .playback-end { justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; }
   .playback-end .filters { flex-basis: 100%; }
@@ -539,7 +548,11 @@ main:focus { outline: none; }
   .tab::before, .filter::before, .text-btn::before, .code-tab::before { content: ""; position: absolute; inset: -10px -5px; }
 }
 
-.playback-hint { margin-top: 12px; font-size: 12.5px; line-height: 1.5; color: var(--fg-3); }
+.hint-row { display: flex; align-items: baseline; justify-content: space-between; gap: 6px 24px; flex-wrap: wrap; margin-top: 12px; }
+.playback-hint { flex: 1 1 320px; font-size: 12.5px; line-height: 1.5; color: var(--fg-3); }
+.hint-actions { display: flex; gap: 20px; }
+.hint-actions .text-btn { font-size: 13px; }
+.plot-speed { stroke: var(--fg-2); stroke-width: 1.25; opacity: 0.75; vector-effect: non-scaling-stroke; }
 
 /* Value boxes are typed inputs, styled as the easing.dev value boxes they replace. */
 .value-input {
@@ -591,6 +604,7 @@ main:focus { outline: none; }
     text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px;
   }
   .plot-traced, .plot-head, .editor-curve, .editor-head, .mini-line { stroke: Highlight; }
+  .plot-speed { stroke: CanvasText; }
   .plot-head, .editor-head, .editor-handle { fill: Highlight; }
   .editor-leg { stroke: CanvasText; }
 }

@@ -1,7 +1,7 @@
 import { LIBRARY, byId, resolve, snippets, round, clamp } from './easings.js';
 import { createPlot, sample, extent, miniCurve } from './curve.js';
 import { DEMOS, demoById } from './demos.js';
-import { forwardMotion, interruptMotion, traceOf } from './motion.js';
+import { forwardMotion, interruptMotion, traceOf, speedTrace } from './motion.js';
 
 const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const STORE_KEY = 'easing-lab-state-v2';
@@ -26,6 +26,8 @@ const defaults = () => ({
   codeTab: 'CSS',
   pickerGroup: 'All',
   smooth: false,
+  direction: 'enter',
+  showSpeed: false,
 });
 
 function load() {
@@ -218,7 +220,7 @@ function buildGrid() {
 function refreshCards() {
   cards.forEach((card) => {
     card.resolved = resolveCard(card.config);
-    card.motion = forwardMotion(card.resolved);
+    card.motion = forwardMotion(card.resolved, state.direction);
   });
   plotRun(cards);
   cards.forEach((card) => {
@@ -231,9 +233,8 @@ function refreshCards() {
       const button = card.article.querySelector(`[data-act="${act}"]`);
       if (button) { button.setAttribute('aria-label', text); button.title = text; }
     }
-    card.apply(REDUCED ? 1 : 0);
-    card.plot.setProgress(REDUCED ? 1 : 0);
   });
+  if (REDUCED) showEnd(cards); else showStart(cards);
   save();
 }
 
@@ -299,8 +300,42 @@ function activeCards() {
   return cards;
 }
 
-function showEnd(list) {
-  list.forEach((card) => { card.apply(1); card.plot.setProgress(1); });
+// Tune always previews the entrance; Compare follows the Enter / Exit choice.
+const direction = () => (state.view === 'tune' ? 'enter' : state.direction);
+
+function showAt(list, ms) {
+  list.forEach((card) => {
+    const { motion } = card;
+    card.apply(motion.pos(ms), (delay) => motion.pos(ms - delay));
+    card.plot.setProgress(ms / motion.totalMs);
+  });
+  if (list === cards) syncScrub(ms);
+}
+const showStart = (list) => showAt(list, 0);
+const showEnd = (list) => showAt(list, Infinity);
+
+// How long the whole comparison runs: the slowest card, plus any stagger.
+function runLength() {
+  const lag = demoById(state.demo).lagMs ?? 0;
+  return Math.round(Math.max(1, ...cards.map((card) => card.motion.totalMs)) + lag);
+}
+
+// Keep the timeline's thumb and readout on the moment being shown.
+function syncScrub(ms) {
+  const scrub = $('#scrub');
+  const total = runLength();
+  const at = Math.round(clamp(ms, 0, total));
+  scrub.max = total;
+  setRange(scrub, at);
+  $('#scrub-out').textContent = `${at}ms`;
+  scrub.setAttribute('aria-valuetext', `${at} of ${total} milliseconds`);
+}
+
+// Dragging the timeline is direct manipulation: playback stops and every card
+// shows exactly that moment.
+function seek(ms) {
+  stopClock();
+  showAt(cards, ms);
 }
 
 // Plot what each card will actually do over the run, on one shared vertical
@@ -308,9 +343,13 @@ function showEnd(list) {
 function plotRun(list, markerMs = null) {
   const traces = list.map((card) => traceOf(card.motion));
   const range = extent(traces);
+  // Speed shares one scale too: the fastest moment of any card reaches the top rule.
+  const speeds = state.showSpeed ? list.map((card) => speedTrace(card.motion)) : null;
+  const top = speeds ? Math.max(1e-6, ...speeds.flat().map(([, s]) => s)) : 1;
   list.forEach((card, i) => {
     card.plot.setCurve(traces[i], range);
     card.plot.setMarker?.(markerMs === null ? null : markerMs / card.motion.totalMs);
+    card.plot.setSpeed?.(speeds ? speeds[i] : null, top);
   });
 }
 
@@ -325,8 +364,8 @@ function playAll({ auto = false, interruptAt = null } = {}) {
   if (!running.length) return;
   lastRun = interruptAt === null ? 'replay' : 'interrupt';
   running.forEach((card) => {
-    card.motion = forwardMotion(card.resolved);
-    card.target = 1;
+    card.motion = forwardMotion(card.resolved, direction());
+    card.target = direction() === 'exit' ? 0 : 1;
   });
   plotRun(running);
   if (REDUCED && auto) { showEnd(running); return; }
@@ -377,12 +416,14 @@ function frame(now) {
     card.plot.setProgress(t / motion.totalMs);
     if (stepped() ? step < STEPS : elapsed < motion.totalMs + lag) done = false;
   }
+  if (running === cards) syncScrub(stepped() ? (step / STEPS) * runLength() : elapsed);
   if (!done) { rafId = requestAnimationFrame(frame); return; }
   rafId = null;
   if (state.loop && !REDUCED) {
     const again = lastRun === 'interrupt' ? interruptPoint() : null;
     holdId = setTimeout(() => {
-      running.forEach((card) => { card.apply(0); card.plot.setProgress(0); });
+      running.forEach((card) => { card.motion = forwardMotion(card.resolved, direction()); });
+      showStart(running);
       holdId = setTimeout(() => playAll({ auto: true, interruptAt: again }), 140);
     }, HOLD_MS);
   }
@@ -724,6 +765,44 @@ function initControls() {
     playAll();
   });
 
+  renderFilters($('#direction'), [{ value: 'enter', label: 'Enter' }, { value: 'exit', label: 'Exit' }], state.direction, (value) => {
+    state.direction = value;
+    refreshCards();
+    paintHint();
+    playAll();
+  });
+
+  const scrub = $('#scrub');
+  scrub.addEventListener('input', () => seek(Number(scrub.value)));
+
+  const speedToggle = $('#speed-toggle');
+  speedToggle.setAttribute('aria-pressed', String(state.showSpeed));
+  speedToggle.addEventListener('click', () => {
+    state.showSpeed = !state.showSpeed;
+    speedToggle.setAttribute('aria-pressed', String(state.showSpeed));
+    plotRun(cards);
+    // Redrawing resets each playhead; put it back on the moment being shown.
+    if (!rafId) cards.forEach((card) => card.plot.setProgress(Number(scrub.value) / card.motion.totalMs));
+    paintHint();
+    save();
+    announce(state.showSpeed ? 'Speed graph on. The grey line in each graph is speed.' : 'Speed graph off.');
+  });
+  paintHint();
+
+  // A link can only carry a comparison when the page has its own address, so the
+  // button stays hidden inside an embedded preview.
+  const share = $('#share');
+  let embedded = true;
+  try { embedded = window.self !== window.top; } catch { /* cross-origin frame: embedded */ }
+  share.hidden = embedded;
+  share.addEventListener('click', () => {
+    copyText(shareUrl(), () => {
+      share.textContent = 'Link copied';
+      announce('Copied a link to this comparison.');
+      setTimeout(() => { share.textContent = 'Copy link'; }, 1400);
+    });
+  });
+
   const duration = $('#duration');
   setRange(duration, state.durationMs);
   $('#duration-out').textContent = `${state.durationMs}ms`;
@@ -903,6 +982,75 @@ function initControls() {
 // 0.32, 1.1)`, Compose's CubicBezierEasing(0.17f, ...), an array, or just four numbers.
 // When the text names the curve, only the numbers inside its brackets count, so the
 // 300 in 300ms is never mistaken for x1.
+function paintHint() {
+  const parts = ['Duration sets the timing curves; springs keep their own. Press Space to replay, or click any card.'];
+  if (state.direction === 'exit') parts.push('Exits usually want about two-thirds of the entrance duration.');
+  if (state.showSpeed) parts.push('The grey line is speed.');
+  $('#playback-hint').textContent = parts.join(' ');
+}
+
+/* ----------------------------------------------------------- share links */
+
+// A link carries the comparison: which curves (with any edits), the interaction,
+// the duration and the direction. Everything read back from a link is rebuilt
+// from validated numbers and known ids, never trusted as-is.
+function sanitizeCard(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const num = (v, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? clamp(v, lo, hi) : undefined);
+  const b = raw.bezier;
+  const bezier = Array.isArray(b) && b.length === 4 && b.every((n) => typeof n === 'number' && Number.isFinite(n))
+    ? [clamp(b[0], 0, 1), clamp(b[1], EDITOR.yMin, EDITOR.yMax), clamp(b[2], 0, 1), clamp(b[3], EDITOR.yMin, EDITOR.yMax)]
+    : undefined;
+  const durationMs = num(raw.durationMs, 80, 1200);
+  if (raw.id === 'custom') {
+    if (!bezier) return null;
+    return { id: 'custom', custom: true, type: 'bezier', name: 'Custom curve', blurb: '', use: '', bezier, ...(durationMs !== undefined && { durationMs }) };
+  }
+  const base = byId(raw.id);
+  if (!base) return null;
+  const card = { id: base.id };
+  if (base.type === 'bezier') {
+    if (bezier) card.bezier = bezier;
+    if (durationMs !== undefined) card.durationMs = durationMs;
+  } else {
+    const d = num(raw.duration, 0.1, 2);
+    const bounce = num(raw.bounce, -0.5, 0.8);
+    if (d !== undefined) card.duration = d;
+    if (bounce !== undefined) card.bounce = bounce;
+  }
+  return card;
+}
+
+function shareUrl() {
+  const payload = {
+    c: state.cards.map(({ id, bezier, duration, bounce, durationMs }) => ({ id, bezier, duration, bounce, durationMs })),
+    i: state.demo,
+    ms: state.durationMs,
+    d: state.direction,
+  };
+  const code = btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${location.origin}${location.pathname}?s=${code}`;
+}
+
+function loadSharedLink() {
+  let code = null;
+  try { code = new URLSearchParams(location.search).get('s'); } catch { return; }
+  if (!code) return;
+  try {
+    const payload = JSON.parse(atob(code.replace(/-/g, '+').replace(/_/g, '/')));
+    const shared = (Array.isArray(payload.c) ? payload.c : []).map(sanitizeCard).filter(Boolean).slice(0, MAX_CARDS);
+    if (shared.length) {
+      state.cards = shared;
+      state.view = 'compare';
+      if (DEMOS.some((d) => d.id === payload.i)) state.demo = payload.i;
+      if (typeof payload.ms === 'number' && Number.isFinite(payload.ms)) state.durationMs = Math.round(clamp(payload.ms, 80, 1200));
+      state.direction = payload.d === 'exit' ? 'exit' : 'enter';
+    }
+  } catch { /* a damaged link opens the page as usual */ }
+  // Drop the code from the address, so later changes aren't mistaken for the shared state.
+  try { history.replaceState(null, '', location.pathname); } catch { /* not allowed here */ }
+}
+
 const CSS_KEYWORDS = {
   linear: [0, 0, 1, 1],
   ease: [0.25, 0.1, 0.25, 1],
@@ -949,6 +1097,7 @@ function loadBezier(values) {
 }
 
 function init() {
+  loadSharedLink();
   initControls();
   buildGrid();
   buildPicker();
@@ -960,7 +1109,7 @@ function init() {
     showEnd(activeCards());
   } else {
     stopClock();
-    activeCards().forEach((card) => { card.apply(0); card.plot.setProgress(0); });
+    showStart(activeCards());
     setTimeout(() => playAll({ auto: true }), 400);
   }
 }

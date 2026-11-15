@@ -58,7 +58,16 @@
       <h2 class="sr-only">Comparison</h2>
       <div class="grid" id="grid"></div>
 
-      <div class="playback">
+      <div class="playback-stack">
+        <div class="scrub-row">
+          <div class="filters" id="direction" role="radiogroup" aria-label="Direction"></div>
+          <div class="slider-row is-scrub">
+            <label for="scrub">Timeline</label>
+            <input type="range" id="scrub" min="0" max="300" step="1" value="0" aria-describedby="scrub-hint" />
+            <output id="scrub-out" for="scrub">0ms</output>
+          </div>
+        </div>
+        <div class="playback">
         <div class="slider-row is-inline">
           <label for="duration">Duration</label>
           <input type="range" id="duration" min="80" max="1200" step="10" value="300" aria-describedby="playback-hint" />
@@ -70,8 +79,16 @@
           <button type="button" id="loop" class="text-btn" aria-pressed="false">Loop</button>
           <button type="button" id="replay" class="text-btn is-strong" aria-keyshortcuts="Space">Replay</button>
         </div>
+        </div>
       </div>
-      <p class="playback-hint" id="playback-hint">Duration sets the timing curves; springs keep their own. Press Space to replay, or click any card.</p>
+      <div class="hint-row">
+        <p class="playback-hint" id="playback-hint">Duration sets the timing curves; springs keep their own. Press Space to replay, or click any card.</p>
+        <div class="hint-actions">
+          <button type="button" id="speed-toggle" class="text-btn" aria-pressed="false">Speed graph</button>
+          <button type="button" id="share" class="text-btn" hidden>Copy link</button>
+        </div>
+      </div>
+      <p class="sr-only" id="scrub-hint">Drag to step every card through the animation frame by frame.</p>
       <p class="sr-only" id="interrupt-hint">Plays the cards and reverses them halfway. Press it again during a run to send them back.</p>
 
       <p id="interrupt-note" class="interrupt-note" hidden>
